@@ -7,11 +7,11 @@ export class MinHeap {
     return Math.floor((i - 1) / 2);
   }
 
-  leftChildIndex() {
+  leftChildIndex(i) {
     return 2 * i + 1;
   }
 
-  rightChildIndex() {
+  rightChildIndex(i) {
     return 2 * i + 2;
   }
 
@@ -21,7 +21,7 @@ export class MinHeap {
 
   compare(a, b) {
     if (a.priority !== b.priority) return a.priority - b.priority;
-    if (a.scheduledAt !== b.scheduledAt)
+    if (a.scheduledAt && b.scheduledAt && a.scheduledAt !== b.scheduledAt)
       return new Date(a.scheduledAt) - new Date(b.scheduledAt);
     return new Date(a.createdAt) - new Date(b.createdAt);
   }
@@ -31,39 +31,48 @@ export class MinHeap {
     this.bubbleUp();
   }
 
-  bubbleUp() {
-    for (let i = this.heap.length - 1; i >= 1; i--) {
-      const a = this.heap[i];
-      const b = this.heap[this.leftChildIndex(i)];
-      const c = this.heap[this.rightChildIndex(i)];
-
-      if (c < this.heap.length) {
-        // compare right and left
-        const diff = this.compare(a, c);
-      }
-
-      // a > b -> diff +ve -> swap
-      if (diff > 0) {
-        this.swap(i, this.parentIndex(i));
-      }
-    }
-  }
-
+  // Reorder other elements after removal
   bubbleDown() {
-    for (let i = 0; i < this.heap.length; i++) {
-      const a = this.heap[i];
-      const b = this.heap[this.parentIndex(i)];
+    let i = 0;
 
-      // compare the priority, createdAt, scheduledAt
-      const diff = this.compare(a, b);
+    while (i < this.heap.length) {
+      const left = this.leftChildIndex(i);
+      const right = this.rightChildIndex(i);
 
-      // a < b -> diff -ve -> swap
-      if (diff < 0) {
-        this.swap(i, this.parentIndex(i));
+      // No children left, heap property holds.
+      if (left >= this.heap.length) break;
+
+      let smallest = left;
+      if (
+        right < this.heap.length &&
+        this.compare(this.heap[right], this.heap[left]) < 0
+      ) {
+        smallest = right;
       }
+
+      if (this.compare(this.heap[i], this.heap[smallest]) <= 0) break;
+
+      this.swap(i, smallest);
+      i = smallest;
     }
   }
 
+  // Order the new insert
+  bubbleUp() {
+    let i = this.heap.length - 1;
+
+    while (i > 0) {
+      const p = this.parentIndex(i);
+
+      // Current node is in the right place.
+      if (this.compare(this.heap[i], this.heap[p]) >= 0) break;
+
+      this.swap(i, p);
+      i = p;
+    }
+  }
+
+  // Find smallest element
   peek() {
     return this.heap.length === 0 ? null : this.heap[0];
   }
@@ -80,6 +89,6 @@ export class MinHeap {
   }
 
   size() {
-    return this.array.length;
+    return this.heap.length;
   }
 }
