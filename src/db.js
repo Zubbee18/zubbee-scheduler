@@ -15,7 +15,7 @@ function createJobTable() {
         attemptCount INTEGER NOT NULL DEFAULT 0,
         maxRetries INTEGER NOT NULL DEFAULT 3,
         nextRetryAt DATETIME,
-        scheduledAt DATETIME,
+        scheduledAt DATETIME NOT NULL,
         interval TEXT,
         lastError TEXT,
         result TEXT,
