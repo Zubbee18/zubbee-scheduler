@@ -6,19 +6,10 @@ export const jobRouter = express.Router();
 
 // POST /jobs
 jobRouter.post("/", (req, res) => {
-  const { type, payload, priority, max_retries, interval, scheduled_at } =
-    req.body;
+  const { type, payload, priority, interval, scheduled_at } = req.body;
 
   const { isValid, sanitizedPayload, normalizedInterval, scheduledAtTs } =
-    validatePostJob(
-      type,
-      payload,
-      priority,
-      max_retries,
-      interval,
-      scheduled_at,
-      res,
-    );
+    validatePostJob(type, payload, priority, interval, scheduled_at, res);
 
   if (!isValid) return;
 
@@ -28,14 +19,13 @@ jobRouter.post("/", (req, res) => {
   try {
     // store in db
     const insert = db.prepare(`
-          INSERT INTO jobs (type, payload, priority, maxRetries, interval, scheduledAt)
-          VALUES (@type, @payload, @priority, @maxRetries, @interval, @scheduledAt)
+          INSERT INTO jobs (type, payload, priority, interval, scheduledAt)
+          VALUES (@type, @payload, @priority, @interval, @scheduledAt)
         `);
     const result = insert.run({
       type: normalizedType,
       payload: JSON.stringify(sanitizedPayload),
       priority: priority ?? 2,
-      maxRetries: max_retries ?? 3,
       interval: normalizedInterval ?? null,
       scheduledAt: scheduled_at,
     });
@@ -199,15 +189,7 @@ jobRouter.patch("/:id/cancel", (req, res) => {
 });
 
 // ============================ HELPER FUNCTIONS =========================================
-function validatePostJob(
-  type,
-  payload,
-  priority,
-  maxRetries,
-  interval,
-  scheduled_at,
-  res,
-) {
+function validatePostJob(type, payload, priority, interval, scheduled_at, res) {
   if (!type) {
     res.status(400).json({
       status: "error",
@@ -241,14 +223,6 @@ function validatePostJob(
     res.status(400).json({
       status: "error",
       message: "Priority must be 1, 2 or 3",
-    });
-    return { isValid: false };
-  }
-
-  if (maxRetries !== undefined && !Number.isInteger(maxRetries)) {
-    res.status(400).json({
-      status: "error",
-      message: "max retries must be a valid number",
     });
     return { isValid: false };
   }
