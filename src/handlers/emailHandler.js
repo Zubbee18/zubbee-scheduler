@@ -1,6 +1,6 @@
 import log from "../logger.js";
 
-async function emailHandler(payload) {
+export async function emailHandler(payload) {
   const { to, subject, body } = payload;
 
   // Real validation logic
