@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
 
 const db = new Database("database.db");
+db.pragma("journal_mode = WAL");
+db.pragma("busy_timeout = 5000");
 export default db;
 
 function createJobTable() {
@@ -14,9 +16,8 @@ function createJobTable() {
           CHECK(status IN ('pending','processing','completed','failed','cancelled')),
         attemptCount INTEGER NOT NULL DEFAULT 0,
         maxRetries INTEGER NOT NULL DEFAULT 3,
-        nextRetryAt DATETIME,
         scheduledAt DATETIME NOT NULL,
-        interval TEXT,
+        interval INTEGER,
         lastError TEXT,
         result TEXT,
         lockedAt DATETIME,
