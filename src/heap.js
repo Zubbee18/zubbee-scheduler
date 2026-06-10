@@ -30,14 +30,9 @@ export class MinHeap {
     if (aTooLong !== bTooLong) return aTooLong ? -1 : 1;
 
     if (a.priority !== b.priority) return a.priority - b.priority;
-    if (a.scheduledAt && b.scheduledAt && a.scheduledAt !== b.scheduledAt)
+    if (a.scheduledAt !== b.scheduledAt)
       return new Date(a.scheduledAt) - new Date(b.scheduledAt);
     return new Date(a.createdAt) - new Date(b.createdAt);
-  }
-
-  insert(value) {
-    this.heap.push(value);
-    this.bubbleUp();
   }
 
   // Reorder other elements after removal
@@ -79,6 +74,11 @@ export class MinHeap {
       this.swap(i, p);
       i = p;
     }
+  }
+
+  insert(value) {
+    this.heap.push(value);
+    this.bubbleUp();
   }
 
   // Find smallest element
