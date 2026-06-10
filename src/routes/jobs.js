@@ -1,52 +1,62 @@
 import express from "express";
 import { log, logger } from "../logger.js";
+import db from "../db.js";
 
 export const jobRouter = express.Router();
 
 // POST /jobs
 jobRouter.post("/", (req, res) => {
-  const { type, payload, priority, maxRetries, interval } = req.body;
+  const { type, payload, priority, max_retries, interval, scheduled_at } =
+    req.body;
 
-  const { isValid, sanitizedPayload, normalizedInterval } = validatePostJob(
-    type,
-    payload,
-    priority,
-    maxRetries,
-    interval,
-    res,
-  );
+  const { isValid, sanitizedPayload, normalizedInterval, scheduledAtTs } =
+    validatePostJob(
+      type,
+      payload,
+      priority,
+      max_retries,
+      interval,
+      scheduled_at,
+      res,
+    );
 
   if (!isValid) return;
+
+  // normalize type
+  const normalizedType = type.toLowerCase().replace(" ", "_").trim();
 
   try {
     // store in db
     const insert = db.prepare(`
-          INSERT INTO requests (url, method, body, status, maxRetries, backoffMs)
-          VALUES (@url, @method, @body, 'pending', @maxRetries, @backoffMs)
+          INSERT INTO jobs (type, payload, priority, maxRetries, interval, scheduledAt)
+          VALUES (@type, @payload, @priority, @maxRetries, @interval, @scheduledAt)
         `);
     const result = insert.run({
-      url: `/jobs/${type}`,
-      method: "POST",
-      body: sanitizedPayload ? JSON.stringify(sanitizedPayload) : null,
-      maxRetries: maxRetries ?? 5,
-      backoffMs: normalizedInterval ?? 1000,
+      type: normalizedType,
+      payload: JSON.stringify(sanitizedPayload),
+      priority: priority ?? 2,
+      maxRetries: max_retries ?? 3,
+      interval: normalizedInterval ?? null,
+      scheduledAt: scheduled_at,
     });
 
     logger.info(
-      `POST /request - Request created with id=${result.lastInsertRowid} url=/jobs/${type} method=POST`,
+      `POST /job - job created with id=${result.lastInsertRowid} type=${normalizedType} priority=${priority}`,
     );
+
+    log("job created", { id: result.lastInsertRowid, type: normalizedType });
 
     // return a response with id and pending
     res
       .status(201)
-      .location(`/requests/${result.lastInsertRowid}`)
+      .location(`/jobs/${result.lastInsertRowid}`)
       .json({ id: result.lastInsertRowid, status: "pending" });
   } catch (err) {
     // if it fails
-    logger.error(`POST /request - DB insert failed: ${err.message}`);
+    logger.error(`POST /job - DB insert failed: ${err.message}`);
     res.status(500).json({
       status: "error",
-      message: "request was not recorded successfully",
+      message: "job was not recorded successfully",
     });
   }
 });
@@ -55,34 +65,32 @@ jobRouter.post("/", (req, res) => {
 jobRouter.get("/:id", (req, res) => {
   const { id } = req.params;
 
-  const getRequestAndAttempts = db.prepare(
-    "SELECT r.*, a.status as attemptStatus, a.message, a.createdAt as attemptCreatedAt FROM requests AS r \
-      JOIN attempts AS a ON r.id = a.requestId \
-      WHERE r.id = ?",
+  const getjobAndAttempts = db.prepare(
+    "SELECT j.*, a.status as attemptStatus, a.response, a.createdAt as attemptCreatedAt FROM jobs AS j \
+      LEFT JOIN attempts AS a ON j.id = a.jobId \
+      WHERE j.id = ?",
   );
 
   try {
-    const requestHistory = getRequestAndAttempts.all(id);
+    const jobHistory = getjobAndAttempts.all(id);
 
-    if (requestHistory.length === 0) {
-      logger.info(`GET /requests/${id} - Not found`);
+    if (jobHistory.length === 0) {
+      logger.info(`GET /jobs/:${id} - Not found`);
       return res
         .status(404)
-        .json({ status: "error", message: "Request not found" });
+        .json({ status: "error", message: "job not found" });
     }
 
-    logger.info(
-      `GET /requests/${id} - Returned ${requestHistory.length} attempt(s)`,
-    );
+    logger.info(`GET /jobs/${id} - Returned ${jobHistory.length} attempt(s)`);
     res.status(200).json({
       status: "success",
-      data: requestHistory,
+      data: jobHistory,
     });
   } catch (err) {
-    logger.error(`GET /requests/${id} - DB query failed: ${err.message}`);
+    logger.error(`GET /jobs/${id} - DB query failed: ${err.message}`);
     res
       .status(500)
-      .json({ status: "error", message: "Could not retrieve request" });
+      .json({ status: "error", message: "Could not retrieve job" });
   }
 });
 
@@ -90,23 +98,27 @@ jobRouter.get("/:id", (req, res) => {
 jobRouter.get("/", (req, res) => {
   const { status } = req.query;
 
-  if (!["pending", "retrying", "completed", "failed"].includes(status)) {
+  if (
+    !["pending", "processing", "completed", "failed", "cancelled"].includes(
+      status,
+    )
+  ) {
     return res.status(400).json({
       status: "error",
       message:
-        "Invalid status. Status must be 'pending', 'retrying', 'completed', 'failed' ",
+        "Invalid status. Status must be 'pending','processing','completed','failed' or 'cancelled' ",
     });
   }
 
-  const getRequestsByStatus = db.prepare(
-    "SELECT * FROM requests \
+  const getjobsByStatus = db.prepare(
+    "SELECT * FROM jobs \
       WHERE status = ?",
   );
 
   try {
-    const result = getRequestsByStatus.all(status);
+    const result = getjobsByStatus.all(status);
     logger.info(
-      `GET /requests?status=${status} - Returned ${result.length} request(s)`,
+      `GET /jobs?status=${status} - Returned ${result.length} job(s)`,
     );
     res.status(200).json({
       status: "success",
@@ -114,23 +126,92 @@ jobRouter.get("/", (req, res) => {
     });
   } catch (err) {
     logger.error(
-      `GET /requests?status=${status} - DB query failed: ${err.message}`,
+      `GET /jobs?status=${status} - DB query failed: ${err.message}`,
     );
     res
       .status(500)
-      .json({ status: "error", message: "Could not retrieve request" });
+      .json({ status: "error", message: "Could not retrieve jobs" });
   }
 });
 
 // PATCH /jobs/:id/cancel
-jobRouter.patch("/:id/cancel", (req, res) => {});
+jobRouter.patch("/:id/cancel", (req, res) => {
+  // get job by id
+  const { id } = req.params;
+
+  const getJobStatusById = db.prepare(
+    "SELECT status FROM jobs \
+      WHERE id = ?",
+  );
+
+  try {
+    const jobStatus = getJobStatusById.get(id);
+
+    if (jobStatus === undefined) {
+      logger.info(`GET /jobs/:${id}/cancel - Job Not found`);
+      return res
+        .status(404)
+        .json({ status: "error", message: "job not found" });
+    }
+
+    if (jobStatus.status === "cancelled") {
+      return res.status(409).json({
+        status: "error",
+        message: "Job is already cancelled.",
+      });
+    }
+
+    if (jobStatus.status === "completed") {
+      return res.status(409).json({
+        status: "error",
+        message: "Job is already completed.",
+      });
+    }
+
+    // update status to cancelled
+    const updateStatusToProcessed = db.prepare(
+      `UPDATE jobs
+        SET status = 'processing', updatedAt = CURRENT_TIMESTAMP
+        WHERE id = ? AND status = 'pending';`,
+    );
+
+    const updateStatusToCancelled = db.prepare(
+      `UPDATE jobs
+      SET status = 'cancelled', updatedAt = CURRENT_TIMESTAMP
+      WHERE id = ? AND status = 'processing';`,
+    );
+
+    const moveToProcessed = updateStatusToProcessed.run(id);
+
+    const updateResult = updateStatusToCancelled.run(id);
+
+    return res.status(200).json({
+      status: "success",
+      message: "job has been cancelled successfully",
+    });
+  } catch (err) {
+    logger.error(`GET /jobs/:${id}/cancel - DB query failed: ${err.message}`);
+    res.status(500).json({
+      status: "error",
+      message: "Could not retrieve job. Please try again later.",
+    });
+  }
+});
 
 // ============================ HELPER FUNCTIONS =========================================
-function validatePostJob(type, payload, priority, maxRetries, interval, res) {
+function validatePostJob(
+  type,
+  payload,
+  priority,
+  maxRetries,
+  interval,
+  scheduled_at,
+  res,
+) {
   if (!type) {
     res.status(400).json({
       status: "error",
-      message: "Missing type. Please input type in your request",
+      message: "Missing type. Please input type in your job",
     });
     return { isValid: false };
   }
@@ -138,7 +219,7 @@ function validatePostJob(type, payload, priority, maxRetries, interval, res) {
   if (!payload) {
     res.status(400).json({
       status: "error",
-      message: "Missing payload. Please input the payload in your request",
+      message: "Missing payload. Please input the payload in your job",
     });
     return { isValid: false };
   }
@@ -184,7 +265,8 @@ function validatePostJob(type, payload, priority, maxRetries, interval, res) {
         return { isValid: false };
       }
     } else if (typeof interval === "string") {
-      const intervalRegex = /^every_(\d+)_(second|seconds|minute|minutes|hour|hours)$/i;
+      const intervalRegex =
+        /^every_(\d+)_(second|seconds|minute|minutes|hour|hours)$/i;
       const match = interval.match(intervalRegex);
 
       if (!match) {
@@ -213,6 +295,31 @@ function validatePostJob(type, payload, priority, maxRetries, interval, res) {
     }
   }
 
-  return { isValid: true, sanitizedPayload, normalizedInterval };
-}
+  if (scheduled_at === undefined) {
+    res.status(400).json({
+      status: "error",
+      message: "scheduled at time must be present",
+    });
+    return { isValid: false };
+  }
+  const scheduledAtTs =
+    typeof scheduled_at === "number" ? scheduled_at : Date.parse(scheduled_at);
 
+  if (!Number.isFinite(scheduledAtTs)) {
+    res.status(400).json({
+      status: "error",
+      message: "scheduled_at must be a valid date",
+    });
+    return { isValid: false };
+  }
+
+  if (scheduledAtTs <= Date.now()) {
+    res.status(400).json({
+      status: "error",
+      message: "Scheduled date must be in the future",
+    });
+    return { isValid: false };
+  }
+
+  return { isValid: true, sanitizedPayload, normalizedInterval, scheduledAtTs };
+}
