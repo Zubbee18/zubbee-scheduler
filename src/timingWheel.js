@@ -1,4 +1,4 @@
-export class timingWheel {
+export class TimingWheel {
   constructor(tickMs = 1000, slots = 3600) {
     this.tickMs = tickMs;
     this.slots = slots;
@@ -14,7 +14,7 @@ export class timingWheel {
   schedule(job) {
     const { id, priority, scheduledAt, createdAt } = job;
     const now = Date.now();
-    const oneHourMs = 60 * 60 * 1000;
+    const timeMs = process.env.TIMING_MIN * 60 * 1000;
     const scheduledMs = new Date(scheduledAt).getTime();
     const createdAtMs = new Date(createdAt).getTime();
     const delayMs = Math.max(1000, scheduledMs - now);

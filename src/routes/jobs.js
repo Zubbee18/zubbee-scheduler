@@ -169,7 +169,7 @@ jobRouter.patch("/:id/cancel", (req, res) => {
     }
 
     // update status to cancelled
-    const updateStatusToProcessed = db.prepare(
+    const updateStatusToProcessing = db.prepare(
       `UPDATE jobs
         SET status = 'processing', updatedAt = CURRENT_TIMESTAMP
         WHERE id = ? AND status = 'pending';`,
@@ -181,7 +181,7 @@ jobRouter.patch("/:id/cancel", (req, res) => {
       WHERE id = ? AND status = 'processing';`,
     );
 
-    const moveToProcessed = updateStatusToProcessed.run(id);
+    const moveToProcessed = updateStatusToProcessing.run(id);
 
     const updateResult = updateStatusToCancelled.run(id);
 
