@@ -20,6 +20,15 @@ export class MinHeap {
   }
 
   compare(a, b) {
+    const now = Date.now();
+    const oneHourMs = 60 * 60 * 1000;
+
+    const aTooLong = now - new Date(a.createdAt).getTime() >= oneHourMs;
+    const bTooLong = now - new Date(b.createdAt).getTime() >= oneHourMs;
+
+    // Expired jobs always run first.
+    if (aTooLong !== bTooLong) return aTooLong ? -1 : 1;
+
     if (a.priority !== b.priority) return a.priority - b.priority;
     if (a.scheduledAt && b.scheduledAt && a.scheduledAt !== b.scheduledAt)
       return new Date(a.scheduledAt) - new Date(b.scheduledAt);
