@@ -1,8 +1,9 @@
 import Database from "better-sqlite3";
 
 const db = new Database("database.db");
+export default db;
 
-function createRequestTable() {
+function createJobTable() {
   db.exec(`
       CREATE TABLE IF NOT EXISTS jobs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,6 +61,7 @@ function createDLQTable() {
     `);
 }
 
-createRequestTable();
+createJobTable();
 createAttemptTable();
-module.exports = db;
+createJobDepTable();
+createDLQTable();
