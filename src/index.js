@@ -15,5 +15,3 @@ app.use("/dlq", dlqRouter);
 app.listen(3000, () => {
   logger.info("Server running at http://localhost:3000");
 });
-
-require("./worker");
