@@ -1,5 +1,73 @@
-const express = require("express");
-const chalk = require("chalk");
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import { MinHeap } from "./heap.js";
+import { genericHandler } from "./handlers/genericHandler.js";
+
+// ── Heap ──────────────────────────────────────────────────────────────────────
+
+describe("MinHeap", () => {
+  test("extracts jobs in priority order (1=high, 3=low)", () => {
+    const heap = new MinHeap();
+    const now = new Date().toISOString();
+    heap.insert({ id: 1, priority: 3, scheduledAt: now, createdAt: now });
+    heap.insert({ id: 2, priority: 1, scheduledAt: now, createdAt: now });
+    heap.insert({ id: 3, priority: 2, scheduledAt: now, createdAt: now });
+    assert.equal(heap.extractMin().id, 2);
+    assert.equal(heap.extractMin().id, 3);
+    assert.equal(heap.extractMin().id, 1);
+  });
+
+  test("returns null when heap is empty", () => {
+    const heap = new MinHeap();
+    assert.equal(heap.extractMin(), null);
+    assert.equal(heap.peek(), null);
+  });
+
+  test("same priority: breaks ties by scheduledAt then createdAt", () => {
+    const heap = new MinHeap();
+    const earlier = "2026-01-01T00:00:00.000Z";
+    const later   = "2026-01-02T00:00:00.000Z";
+    heap.insert({ id: 10, priority: 2, scheduledAt: later,   createdAt: later });
+    heap.insert({ id: 11, priority: 2, scheduledAt: earlier, createdAt: earlier });
+    assert.equal(heap.extractMin().id, 11);
+  });
+
+  test("size reflects inserts and extractions", () => {
+    const heap = new MinHeap();
+    const now = new Date().toISOString();
+    heap.insert({ id: 1, priority: 1, scheduledAt: now, createdAt: now });
+    heap.insert({ id: 2, priority: 2, scheduledAt: now, createdAt: now });
+    assert.equal(heap.size(), 2);
+    heap.extractMin();
+    assert.equal(heap.size(), 1);
+  });
+});
+
+// ── genericHandler ────────────────────────────────────────────────────────────
+
+describe("genericHandler", () => {
+  test("returns a result object with expected shape", async () => {
+    // Retry up to 10 times to account for the 20% random failure rate
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const result = await genericHandler("log_process", { message: "hello" });
+        assert.equal(result.processed, true);
+        assert.equal(result.type, "log_process");
+        assert.ok(result.processedAt);
+        return;
+      } catch { /* random failure — retry */ }
+    }
+    assert.fail("genericHandler failed 10 consecutive times");
+  });
+
+  test("throws when type is empty string", async () => {
+    await assert.rejects(
+      () => genericHandler("", { foo: "bar" }),
+      /Job type is required/
+    );
+  });
+});
+
 
 const app = express();
 
