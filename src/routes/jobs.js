@@ -6,7 +6,7 @@ export const jobRouter = express.Router();
 
 // POST /jobs
 jobRouter.post("/", (req, res) => {
-  const { type, payload, priority, interval, scheduled_at } = req.body;
+  const { type, payload, priority, interval, scheduled_at, dependsOn } = req.body;
 
   const { isValid, sanitizedPayload, normalizedInterval, scheduledAtTs } =
     validatePostJob(type, payload, priority, interval, scheduled_at, res);
@@ -35,6 +35,23 @@ jobRouter.post("/", (req, res) => {
     );
 
     log("job created", { id: result.lastInsertRowid, type: normalizedType });
+
+    // wire up DAG dependencies if provided
+    if (Array.isArray(dependsOn) && dependsOn.length > 0) {
+      const insertDep = db.prepare(
+        "INSERT INTO job_dependencies (jobId, dependsOnJobId) VALUES (?, ?)"
+      );
+      const insertDeps = db.transaction((jobId, deps) => {
+        for (const depId of deps) insertDep.run(jobId, depId);
+      });
+      try {
+        insertDeps(result.lastInsertRowid, dependsOn);
+      } catch (depErr) {
+        logger.error(
+          `POST /jobs - failed to insert dependencies for job ${result.lastInsertRowid}: ${depErr.message}`
+        );
+      }
+    }
 
     // return a response with id and pending
     res
@@ -126,65 +143,38 @@ jobRouter.get("/", (req, res) => {
 
 // PATCH /jobs/:id/cancel
 jobRouter.patch("/:id/cancel", (req, res) => {
-  // get job by id
   const { id } = req.params;
 
-  const getJobStatusById = db.prepare(
-    "SELECT status FROM jobs \
-      WHERE id = ?",
-  );
-
   try {
-    const jobStatus = getJobStatusById.get(id);
+    const job = db.prepare("SELECT status FROM jobs WHERE id = ?").get(id);
 
-    if (jobStatus === undefined) {
-      logger.info(`GET /jobs/:${id}/cancel - Job Not found`);
-      return res
-        .status(404)
-        .json({ status: "error", message: "job not found" });
+    if (!job) {
+      logger.info(`PATCH /jobs/${id}/cancel - Not found`);
+      return res.status(404).json({ status: "error", message: "job not found" });
     }
 
-    if (jobStatus.status === "cancelled") {
+    // Atomically cancel — only if still cancellable
+    // Processing jobs are also cancellable; worker checks status before finalizing
+    const updateResult = db
+      .prepare(
+        `UPDATE jobs
+         SET status = 'cancelled', updatedAt = CURRENT_TIMESTAMP
+         WHERE id = ? AND status IN ('pending', 'processing')`,
+      )
+      .run(id);
+
+    if (updateResult.changes === 0) {
       return res.status(409).json({
         status: "error",
-        message: "Job is already cancelled.",
+        message: `Job cannot be cancelled (current status: ${job.status})`,
       });
     }
 
-    if (jobStatus.status === "completed") {
-      return res.status(409).json({
-        status: "error",
-        message: "Job is already completed.",
-      });
-    }
-
-    // update status to cancelled
-    const updateStatusToProcessing = db.prepare(
-      `UPDATE jobs
-        SET status = 'processing', updatedAt = CURRENT_TIMESTAMP
-        WHERE id = ? AND status = 'pending';`,
-    );
-
-    const updateStatusToCancelled = db.prepare(
-      `UPDATE jobs
-      SET status = 'cancelled', updatedAt = CURRENT_TIMESTAMP
-      WHERE id = ? AND status = 'processing';`,
-    );
-
-    const moveToProcessed = updateStatusToProcessing.run(id);
-
-    const updateResult = updateStatusToCancelled.run(id);
-
-    return res.status(200).json({
-      status: "success",
-      message: "job has been cancelled successfully",
-    });
+    logger.info(`PATCH /jobs/${id}/cancel - cancelled`);
+    return res.status(200).json({ status: "success", message: "job has been cancelled successfully" });
   } catch (err) {
-    logger.error(`GET /jobs/:${id}/cancel - DB query failed: ${err.message}`);
-    res.status(500).json({
-      status: "error",
-      message: "Could not retrieve job. Please try again later.",
-    });
+    logger.error(`PATCH /jobs/${id}/cancel - DB query failed: ${err.message}`);
+    res.status(500).json({ status: "error", message: "Could not cancel job. Please try again later." });
   }
 });
 
