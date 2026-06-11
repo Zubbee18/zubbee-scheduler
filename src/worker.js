@@ -1,8 +1,12 @@
 import db from "./db";
-import { MinHeap } from "./heap.js";
+import { MinHeap as HeapClass } from "./heap.js";
 import { TimingWheel } from "./timingWheel.js";
-import { log, logger } from "./logger";
+import { logger } from "./logger";
 import { emailHandler } from "./handlers/emailHandler.js";
+import { genericHandler } from "./handlers/genericHandler.js";
+
+const MinHeap = new HeapClass();
+const DLQ_ALERT_THRESHOLD = parseInt(process.env.DLQ_ALERT_THRESHOLD ?? "10");
 
 async function runWorker() {
   const getReadyJobs = db.prepare(`
@@ -52,34 +56,36 @@ async function runWorker() {
   );
 
   const recordAttempt = db.prepare(
-    "INSERT INTO attempts (jobId, status, message) \
-      VALUES (?, ?, ?)",
+    "INSERT INTO attempts (jobId, status, error, response, attemptNumber) VALUES (?, ?, ?, ?, ?)"
   );
+
+  const insertDLQ = db.prepare("INSERT OR IGNORE INTO dlq (jobId, reason) VALUES (?, ?)");
+  const checkCancelled = db.prepare("SELECT status FROM jobs WHERE id = ?");
+  const getDLQCount = db.prepare("SELECT COUNT(*) as count FROM dlq");
 
   const incrementAttemptCount = db.prepare(
     "UPDATE jobs SET attemptCount = ? \
       WHERE id = ?",
   );
 
-  const finishCompleted = db.transaction((attemptCount, result, now, id) => {
+  const finishCompleted = db.transaction((attemptCount, handlerResult, now, id) => {
     incrementAttemptCount.run(attemptCount, id);
-    updateCompleted.run(result, now, id);
-    recordAttempt.run(id, "success", result);
+    updateCompleted.run(handlerResult, now, id);
+    recordAttempt.run(id, "success", null, handlerResult, attemptCount);
   });
 
-  const finishFailed = db.transaction((attemptCount, result, now, id) => {
+  const finishFailed = db.transaction((attemptCount, errorMsg, now, id) => {
     incrementAttemptCount.run(attemptCount, id);
-    updateFailed.run(result, now, id);
-    recordAttempt.run(id, "error", result);
+    updateFailed.run(errorMsg, now, id);
+    recordAttempt.run(id, "error", errorMsg, null, attemptCount);
+    insertDLQ.run(id, errorMsg);
   });
 
-  const finishRetry = db.transaction(
-    (attemptCount, result, now, scheduledAt, id) => {
-      incrementAttemptCount.run(attemptCount, id);
-      updateRetry.run(result, scheduledAt, now, id);
-      recordAttempt.run(id, "error", result);
-    },
-  );
+  const finishRetry = db.transaction((attemptCount, errorMsg, now, scheduledAt, id) => {
+    incrementAttemptCount.run(attemptCount, id);
+    updateRetry.run(errorMsg, scheduledAt, now, id);
+    recordAttempt.run(id, "error", errorMsg, null, attemptCount);
+  });
 
   // ================================================================================
 
@@ -90,114 +96,79 @@ async function runWorker() {
 
   const priorityJob = getFromHeap();
   const processingJob = priorityJob ? lockProcessing.get(priorityJob.id) : null;
+
   if (processingJob) {
     const {
-      id,
-      type,
-      payload,
-      priority,
-      status,
-      attemptCount,
-      scheduledAt,
+      id, type, payload, priority,
+      attemptCount, maxRetries,
       interval,
-      result,
-      lockedAt,
-      updatedAt,
     } = processingJob;
 
     const backoffMs = 1000;
+    const parsedPayload = JSON.parse(payload);
 
-    // run handlers
-    if (type === "send_email") {
+    // Shared handler: runs the job fn, writes result/failure, handles DLQ alert
+    async function handleJob(handlerFn) {
       try {
-        // run email handler
-        const { delivered, to, subject, sentAt } = await emailHandler(payload);
+        const result = await handlerFn();
 
-        // successful
-        if (delivered) {
-          logger.info(`job with id=${id} - email was successfully sent`);
+        const { status: currentStatus } = checkCancelled.get(id);
+        if (currentStatus === "cancelled") {
+          logger.info(`job with id=${id} was cancelled during processing - skipping finalization`);
+          return;
+        }
 
-          try {
-            const now = new Date().toISOString().replace("T", " ").slice(0, 19);
-            const newAttemptCount = attemptCount + 1;
-            finishCompleted(newAttemptCount, result, now, id);
-            if (interval) {
-              const nextScheduledAt = new Date(
-                Date.now() + interval,
-              ).toISOString();
-              const newJob = createNewJob.run(
-                type,
-                payload,
-                priority,
-                interval,
-                nextScheduledAt,
-              );
+        const now = new Date().toISOString();
+        finishCompleted(attemptCount + 1, JSON.stringify(result), now, id);
+        logger.info(`job with id=${id} (${type}) completed successfully`);
 
-              log();
-            }
-            logger.info(
-              `job with id=${id} was successfully updated as "completed" }`,
-            );
-          } catch (err) {
-            logger.error(
-              `job with id=${id} was could not be updated as "completed" }`,
-            );
-          }
+        if (interval) {
+          const nextScheduledAt = new Date(Date.now() + interval).toISOString();
+          createNewJob.run(type, payload, priority, interval, nextScheduledAt);
+          logger.info(`job with id=${id} - recurring job scheduled at ${nextScheduledAt}`);
         }
       } catch (err) {
-        if (
+        const isPermanentFailure =
           err.message === "Invalid email address" ||
-          err.message === "Subject is required"
-        ) {
-          logger.info(`job with id=${id} was failed with 4xx error`);
+          err.message === "Subject is required";
 
-          try {
-            const now = new Date().toISOString().replace("T", " ").slice(0, 19);
-            const newAttemptCount = attemptCount + 1;
-            finishFailed(newAttemptCount, result, now, id);
-            logger.info(
-              `job with id=${id} was successfully updated as "failed" }`,
-            );
-          } catch (err) {
-            logger.error(
-              `job with id=${id} was could not be updated as "failed" }`,
-            );
-          }
-        } else if (err.message === "Mail server timeout") {
-          logger.info(`job with id=${id} was failed with 5xx error`);
+        try {
+          const newAttemptCount = attemptCount + 1;
+          if (isPermanentFailure || newAttemptCount >= maxRetries) {
+            const now = new Date().toISOString();
+            finishFailed(newAttemptCount, err.message, now, id);
+            logger.info(`job with id=${id} (${type}) marked as "failed": ${err.message}`);
 
-          try {
-            const newAttemptCount = attemptCount + 1;
-            if (newAttemptCount > 3) {
-              const now = new Date().toISOString();
-              finishFailed(newAttemptCount, result, now, id);
-              logger.info(
-                `job with id=${id} was successfully updated as "failed" }`,
-              );
-            } else {
-              const jitter = 0.8 + Math.random() * 0.4;
-              const wait = backoffMs * 5 ** attemptCount * jitter;
-              const now = new Date().toISOString();
-              const scheduledAt = new Date(Date.now() + wait).toISOString();
-              finishRetry(newAttemptCount, result, now, scheduledAt, id);
-              logger.info(
-                `job with id=${id} scheduled retry #${newAttemptCount} in ${Math.round(wait)}ms`,
-              );
+            const { count } = getDLQCount.get();
+            if (count >= DLQ_ALERT_THRESHOLD) {
+              logger.warn(`DLQ threshold reached: ${count} jobs in dead-letter queue`);
+              emailHandler({
+                to: process.env.ALERT_EMAIL || "admin@example.com",
+                subject: `[Alert] DLQ has ${count} failed jobs`,
+              }).catch(() => {});
             }
-            logger.info(
-              `job with id=${id} was successfully updated as "pending" }`,
-            );
-          } catch (err) {
-            logger.error(
-              `job with id=${id} could not be updated as "pending" or "failed": ${err.message}`,
-            );
+          } else {
+            const jitter = 0.8 + Math.random() * 0.4;
+            const wait = backoffMs * 5 ** attemptCount * jitter;
+            const now = new Date().toISOString();
+            const nextRetryAt = new Date(Date.now() + wait).toISOString();
+            finishRetry(newAttemptCount, err.message, now, nextRetryAt, id);
+            logger.info(`job with id=${id} scheduled retry #${newAttemptCount} in ${Math.round(wait)}ms`);
           }
+        } catch (dbErr) {
+          logger.error(`job with id=${id} could not be updated after failure: ${dbErr.message}`);
         }
       }
     }
+
+    if (type === "send_email") {
+      await handleJob(() => emailHandler(parsedPayload));
+    } else {
+      await handleJob(() => genericHandler(type, parsedPayload));
+    }
   }
 
-  // Sleep 500ms, then call runWorker() again
+  // Always poll again after 500ms
   setTimeout(runWorker, 500);
 }
 
