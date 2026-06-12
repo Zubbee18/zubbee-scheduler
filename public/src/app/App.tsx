@@ -11,6 +11,7 @@ import { JobDrawerProvider } from "./context/JobDrawerContext";
 export default function App() {
   const [page, setPage] = useState<PageId>("playground");
   const [navOpen, setNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const render = () => {
     switch (page) {
@@ -33,7 +34,12 @@ export default function App() {
         >
           {/* Desktop sidebar */}
           <div className="hidden md:block">
-            <Sidebar active={page} onNavigate={setPage} />
+            <Sidebar
+              active={page}
+              onNavigate={setPage}
+              collapsed={sidebarCollapsed}
+              onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+            />
           </div>
 
           {/* Mobile sidebar */}
