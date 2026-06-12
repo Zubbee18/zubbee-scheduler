@@ -26,9 +26,14 @@ describe("MinHeap", () => {
   test("same priority: breaks ties by scheduledAt then createdAt", () => {
     const heap = new MinHeap();
     const earlier = "2026-01-01T00:00:00.000Z";
-    const later   = "2026-01-02T00:00:00.000Z";
-    heap.insert({ id: 10, priority: 2, scheduledAt: later,   createdAt: later });
-    heap.insert({ id: 11, priority: 2, scheduledAt: earlier, createdAt: earlier });
+    const later = "2026-01-02T00:00:00.000Z";
+    heap.insert({ id: 10, priority: 2, scheduledAt: later, createdAt: later });
+    heap.insert({
+      id: 11,
+      priority: 2,
+      scheduledAt: earlier,
+      createdAt: earlier,
+    });
     assert.equal(heap.extractMin().id, 11);
   });
 
@@ -50,12 +55,16 @@ describe("genericHandler", () => {
     // Retry up to 10 times to account for the 20% random failure rate
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        const result = await genericHandler("log_process", { message: "hello" });
+        const result = await genericHandler("log_process", {
+          message: "hello",
+        });
         assert.equal(result.processed, true);
         assert.equal(result.type, "log_process");
         assert.ok(result.processedAt);
         return;
-      } catch { /* random failure — retry */ }
+      } catch {
+        /* random failure — retry */
+      }
     }
     assert.fail("genericHandler failed 10 consecutive times");
   });
@@ -63,11 +72,10 @@ describe("genericHandler", () => {
   test("throws when type is empty string", async () => {
     await assert.rejects(
       () => genericHandler("", { foo: "bar" }),
-      /Job type is required/
+      /Job type is required/,
     );
   });
 });
-
 
 const app = express();
 

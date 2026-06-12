@@ -1,4 +1,4 @@
-import log from "../logger.js";
+import { log } from "../logger.js";
 
 export async function emailHandler(payload) {
   const { to, subject, body } = payload;

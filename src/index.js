@@ -1,12 +1,21 @@
 import validator from "validator";
 import express from "express";
-import db from "./db";
-import logger from "./logger";
-import { jobRouter } from "./routes/jobs";
-import { dlqRouter } from "./routes/dlq";
+import cors from "cors";
+import swaggerUi from "swagger-ui-express";
+import { createRequire } from "module";
+import db from "./db.js";
+import { logger } from "./logger.js";
+import { jobRouter } from "./routes/jobs.js";
+import { dlqRouter } from "./routes/dlq.js";
+
+const require = createRequire(import.meta.url);
+const swaggerDocument = require("./swagger.json");
 
 const app = express();
+app.use(cors());
 app.use(express.json());
+
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use("/jobs", jobRouter);
 
@@ -14,4 +23,5 @@ app.use("/dlq", dlqRouter);
 
 app.listen(3000, () => {
   logger.info("Server running at http://localhost:3000");
+  logger.info("Swagger UI available at http://localhost:3000/api-docs");
 });

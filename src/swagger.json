@@ -1,0 +1,539 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Zubbee Scheduler API",
+    "description": "Background job scheduler API. Jobs are created, queued, processed by independent workers, retried on failure, and moved to a dead-letter queue after exhausting all retries.\n\n**Priority levels:** 1 = High, 2 = Medium, 3 = Low\n\n**Recurring intervals:** `every_1_minute`, `every_5_minutes`, `every_1_hour`\n\n**Retry backoff:** ~1s → ~5s → ~25s (with jitter)\n\n**DLQ alert threshold:** 10 jobs",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Zubbee Scheduler"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Jobs",
+      "description": "Create, query, and cancel scheduled jobs"
+    },
+    {
+      "name": "Dead-Letter Queue",
+      "description": "Inspect failed jobs and trigger manual retries"
+    }
+  ],
+  "paths": {
+    "/jobs": {
+      "post": {
+        "tags": ["Jobs"],
+        "summary": "Create a new job",
+        "description": "Creates a job and enqueues it for processing. Supports scheduling, recurrence, and DAG dependencies.\n\n- If `scheduled_at` is omitted, the job runs immediately.\n- If `interval` is set, a new job is automatically created after each successful run.\n- If `dependsOn` is set, the job will not run until all listed jobs have completed.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              },
+              "examples": {
+                "immediate_email": {
+                  "summary": "Immediate email job",
+                  "value": {
+                    "type": "send_email",
+                    "priority": 1,
+                    "payload": {
+                      "to": "user@example.com",
+                      "subject": "Welcome to Zubbee Scheduler"
+                    }
+                  }
+                },
+                "scheduled_email": {
+                  "summary": "Scheduled email job",
+                  "value": {
+                    "type": "send_email",
+                    "priority": 2,
+                    "scheduled_at": "2026-07-01T10:00:00Z",
+                    "payload": {
+                      "to": "user@example.com",
+                      "subject": "Scheduled reminder"
+                    }
+                  }
+                },
+                "recurring_job": {
+                  "summary": "Recurring job every minute",
+                  "value": {
+                    "type": "send_email",
+                    "priority": 2,
+                    "interval": "every_1_minute",
+                    "payload": {
+                      "to": "monitor@example.com",
+                      "subject": "Heartbeat check"
+                    }
+                  }
+                },
+                "dag_job": {
+                  "summary": "Job with dependency (DAG)",
+                  "value": {
+                    "type": "generic",
+                    "priority": 2,
+                    "payload": {
+                      "action": "upload_file"
+                    },
+                    "dependsOn": [42]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Job created successfully",
+            "headers": {
+              "Location": {
+                "description": "URL of the newly created job",
+                "schema": { "type": "string", "example": "/jobs/7" }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "integer", "example": 7 },
+                    "status": { "type": "string", "example": "pending" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "List jobs by status",
+        "description": "Returns all jobs matching the given status. Omit `status` to retrieve all jobs.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filter jobs by lifecycle status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "processing",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Job" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/jobs/counts": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "Get job counts grouped by status",
+        "description": "Returns the total count of jobs for each status. Used by the dashboard Stats page.",
+        "responses": {
+          "200": {
+            "description": "Job counts by status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "pending": { "type": "integer", "example": 4 },
+                        "processing": { "type": "integer", "example": 1 },
+                        "completed": { "type": "integer", "example": 23 },
+                        "failed": { "type": "integer", "example": 2 },
+                        "cancelled": { "type": "integer", "example": 1 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/jobs/{id}": {
+      "get": {
+        "tags": ["Jobs"],
+        "summary": "Get a job with its attempt history",
+        "description": "Returns the job record joined with all processing attempts. Each row in `data` represents one attempt.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Job ID",
+            "schema": { "type": "integer", "example": 7 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job with attempt history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/JobWithAttempt" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/jobs/{id}/cancel": {
+      "patch": {
+        "tags": ["Jobs"],
+        "summary": "Cancel a job",
+        "description": "Cancels a job that is still `pending` or `processing`. If the job is already `processing`, the worker will detect the cancellation before finalizing the result and skip writing a completed/failed status.\n\nReturns `409` if the job is already `completed`, `failed`, or `cancelled`.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Job ID",
+            "schema": { "type": "integer", "example": 7 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job cancelled successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "message": {
+                      "type": "string",
+                      "example": "job has been cancelled successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": {
+            "description": "Job cannot be cancelled in its current state",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "status": "error",
+                  "message": "Job cannot be cancelled (current status: completed)"
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/dlq": {
+      "get": {
+        "tags": ["Dead-Letter Queue"],
+        "summary": "List all dead-letter jobs",
+        "description": "Returns jobs that have exhausted all retry attempts (default: 3). Each entry includes the DLQ entry metadata and the originating job details.",
+        "responses": {
+          "200": {
+            "description": "List of dead-letter queue entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/DLQEntry" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/dlq/{id}/retry": {
+      "post": {
+        "tags": ["Dead-Letter Queue"],
+        "summary": "Retry a dead-letter job",
+        "description": "Removes the DLQ entry and resets the original job back to `pending` with a fresh attempt count. If the job fails again after retry, it will be re-inserted into the DLQ.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "DLQ entry ID (not the job ID)",
+            "schema": { "type": "integer", "example": 3 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Job queued for retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "message": {
+                      "type": "string",
+                      "example": "Job queued for retry"
+                    },
+                    "jobId": { "type": "integer", "example": 7 }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateJobRequest": {
+        "type": "object",
+        "required": ["type", "payload"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Job handler type. Use `send_email` for email simulation or any other string for the generic handler.",
+            "example": "send_email"
+          },
+          "payload": {
+            "type": "object",
+            "description": "Handler-specific data. For `send_email`: `{ to, subject }`. For generic jobs: any JSON object.",
+            "example": { "to": "user@example.com", "subject": "Hello" }
+          },
+          "priority": {
+            "type": "integer",
+            "description": "1 = High (default), 2 = Medium, 3 = Low. Lower number = higher priority.",
+            "enum": [1, 2, 3],
+            "default": 2,
+            "example": 1
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 datetime. Job will not be picked up by a worker until this time has passed. Omit to run immediately.",
+            "example": "2026-07-01T10:00:00Z"
+          },
+          "interval": {
+            "type": "string",
+            "description": "Recurring interval. After each successful run the next instance is auto-scheduled.",
+            "enum": ["every_1_minute", "every_5_minutes", "every_1_hour"],
+            "example": "every_5_minutes"
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "Array of job IDs that must all be `completed` before this job starts (DAG workflow).",
+            "example": [42, 43]
+          }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 7 },
+          "type": { "type": "string", "example": "send_email" },
+          "payload": {
+            "type": "string",
+            "description": "JSON string of the job payload",
+            "example": "{\"to\":\"user@example.com\",\"subject\":\"Hello\"}"
+          },
+          "priority": { "type": "integer", "example": 1 },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "example": "pending"
+          },
+          "attemptCount": { "type": "integer", "example": 0 },
+          "maxRetries": { "type": "integer", "example": 3 },
+          "interval": {
+            "type": "string",
+            "nullable": true,
+            "example": "every_5_minutes"
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-01T10:00:00Z"
+          },
+          "lastError": { "type": "string", "nullable": true, "example": null },
+          "result": { "type": "string", "nullable": true, "example": null },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-12T08:00:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-12T08:01:00Z"
+          }
+        }
+      },
+      "JobWithAttempt": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Job" },
+          {
+            "type": "object",
+            "properties": {
+              "attemptStatus": {
+                "type": "string",
+                "nullable": true,
+                "enum": ["success", "error", null],
+                "example": "error"
+              },
+              "response": {
+                "type": "string",
+                "nullable": true,
+                "example": null
+              },
+              "attemptCreatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "example": "2026-06-12T08:00:30Z"
+              }
+            }
+          }
+        ]
+      },
+      "DLQEntry": {
+        "type": "object",
+        "properties": {
+          "dlqId": { "type": "integer", "example": 3 },
+          "reason": { "type": "string", "example": "Invalid email address" },
+          "failedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-12T09:00:00Z"
+          },
+          "id": {
+            "type": "integer",
+            "description": "Original job ID",
+            "example": 7
+          },
+          "type": { "type": "string", "example": "send_email" },
+          "payload": {
+            "type": "string",
+            "example": "{\"to\":\"bad-email\",\"subject\":\"Hi\"}"
+          },
+          "priority": { "type": "integer", "example": 1 },
+          "attemptCount": { "type": "integer", "example": 3 },
+          "maxRetries": { "type": "integer", "example": 3 },
+          "lastError": { "type": "string", "example": "Invalid email address" },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-12T09:00:00Z"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "example": "error" },
+          "message": { "type": "string", "example": "job not found" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request body or query parameter",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "status": "error",
+              "message": "Missing type. Please input type in your job"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "The requested resource was not found",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "status": "error", "message": "job not found" }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Unexpected server error",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "status": "error",
+              "message": "Could not retrieve jobs"
+            }
+          }
+        }
+      }
+    }
+  }
+}

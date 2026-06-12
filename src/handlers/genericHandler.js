@@ -13,5 +13,10 @@ export async function genericHandler(type, payload) {
   }
 
   logger.info(`genericHandler: processed job type="${type}"`);
-  return { processed: true, type, payload, processedAt: new Date().toISOString() };
+  return {
+    processed: true,
+    type,
+    payload,
+    processedAt: new Date().toISOString(),
+  };
 }

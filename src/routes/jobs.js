@@ -6,7 +6,8 @@ export const jobRouter = express.Router();
 
 // POST /jobs
 jobRouter.post("/", (req, res) => {
-  const { type, payload, priority, interval, scheduled_at, dependsOn } = req.body;
+  const { type, payload, priority, interval, scheduled_at, dependsOn } =
+    req.body;
 
   const { isValid, sanitizedPayload, normalizedInterval, scheduledAtTs } =
     validatePostJob(type, payload, priority, interval, scheduled_at, res);
@@ -39,7 +40,7 @@ jobRouter.post("/", (req, res) => {
     // wire up DAG dependencies if provided
     if (Array.isArray(dependsOn) && dependsOn.length > 0) {
       const insertDep = db.prepare(
-        "INSERT INTO job_dependencies (jobId, dependsOnJobId) VALUES (?, ?)"
+        "INSERT INTO job_dependencies (jobId, dependsOnJobId) VALUES (?, ?)",
       );
       const insertDeps = db.transaction((jobId, deps) => {
         for (const depId of deps) insertDep.run(jobId, depId);
@@ -48,7 +49,7 @@ jobRouter.post("/", (req, res) => {
         insertDeps(result.lastInsertRowid, dependsOn);
       } catch (depErr) {
         logger.error(
-          `POST /jobs - failed to insert dependencies for job ${result.lastInsertRowid}: ${depErr.message}`
+          `POST /jobs - failed to insert dependencies for job ${result.lastInsertRowid}: ${depErr.message}`,
         );
       }
     }
@@ -65,6 +66,34 @@ jobRouter.post("/", (req, res) => {
       status: "error",
       message: "job was not recorded successfully",
     });
+  }
+});
+
+// GET /jobs/counts  — must be declared BEFORE /:id to avoid route shadowing
+jobRouter.get("/counts", (req, res) => {
+  try {
+    const rows = db
+      .prepare(`SELECT status, COUNT(*) as count FROM jobs GROUP BY status`)
+      .all();
+
+    const counts = {
+      pending: 0,
+      processing: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+    for (const row of rows) {
+      if (row.status in counts) counts[row.status] = row.count;
+    }
+
+    logger.info(`GET /jobs/counts - returned counts`);
+    res.status(200).json({ status: "success", data: counts });
+  } catch (err) {
+    logger.error(`GET /jobs/counts - DB query failed: ${err.message}`);
+    res
+      .status(500)
+      .json({ status: "error", message: "Could not retrieve job counts" });
   }
 });
 
@@ -101,15 +130,18 @@ jobRouter.get("/:id", (req, res) => {
   }
 });
 
-// GET /jobs?status=pending
+// GET /jobs?status=pending  (status is optional; omit to get all jobs)
 jobRouter.get("/", (req, res) => {
   const { status } = req.query;
+  const validStatuses = [
+    "pending",
+    "processing",
+    "completed",
+    "failed",
+    "cancelled",
+  ];
 
-  if (
-    !["pending", "processing", "completed", "failed", "cancelled"].includes(
-      status,
-    )
-  ) {
+  if (status && !validStatuses.includes(status)) {
     return res.status(400).json({
       status: "error",
       message:
@@ -117,24 +149,21 @@ jobRouter.get("/", (req, res) => {
     });
   }
 
-  const getjobsByStatus = db.prepare(
-    "SELECT * FROM jobs \
-      WHERE status = ?",
-  );
+  const query = status
+    ? db.prepare("SELECT * FROM jobs WHERE status = ? ORDER BY createdAt DESC")
+    : db.prepare("SELECT * FROM jobs ORDER BY createdAt DESC");
 
   try {
-    const result = getjobsByStatus.all(status);
+    const result = status ? query.all(status) : query.all();
     logger.info(
-      `GET /jobs?status=${status} - Returned ${result.length} job(s)`,
+      `GET /jobs${status ? `?status=${status}` : ""} - Returned ${result.length} job(s)`,
     );
     res.status(200).json({
       status: "success",
       data: result,
     });
   } catch (err) {
-    logger.error(
-      `GET /jobs?status=${status} - DB query failed: ${err.message}`,
-    );
+    logger.error(`GET /jobs - DB query failed: ${err.message}`);
     res
       .status(500)
       .json({ status: "error", message: "Could not retrieve jobs" });
@@ -150,7 +179,9 @@ jobRouter.patch("/:id/cancel", (req, res) => {
 
     if (!job) {
       logger.info(`PATCH /jobs/${id}/cancel - Not found`);
-      return res.status(404).json({ status: "error", message: "job not found" });
+      return res
+        .status(404)
+        .json({ status: "error", message: "job not found" });
     }
 
     // Atomically cancel — only if still cancellable
@@ -171,10 +202,16 @@ jobRouter.patch("/:id/cancel", (req, res) => {
     }
 
     logger.info(`PATCH /jobs/${id}/cancel - cancelled`);
-    return res.status(200).json({ status: "success", message: "job has been cancelled successfully" });
+    return res.status(200).json({
+      status: "success",
+      message: "job has been cancelled successfully",
+    });
   } catch (err) {
     logger.error(`PATCH /jobs/${id}/cancel - DB query failed: ${err.message}`);
-    res.status(500).json({ status: "error", message: "Could not cancel job. Please try again later." });
+    res.status(500).json({
+      status: "error",
+      message: "Could not cancel job. Please try again later.",
+    });
   }
 });
 
