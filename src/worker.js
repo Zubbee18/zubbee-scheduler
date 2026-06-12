@@ -1,6 +1,6 @@
 import db from "./db.js";
 import { MinHeap as HeapClass } from "./heap.js";
-import { logger } from "./logger.js";
+import { log, logger } from "./logger.js";
 import { emailHandler } from "./handlers/emailHandler.js";
 import { genericHandler } from "./handlers/genericHandler.js";
 
@@ -109,6 +109,15 @@ async function runWorker() {
     const backoffMs = 1000;
     const parsedPayload = JSON.parse(payload);
 
+    log("job started", {
+      id,
+      type,
+      priority,
+      attemptCount,
+      scheduledAt: processingJob.scheduledAt,
+    });
+    logger.info(`job with id=${id} (${type}) started processing`);
+
     // Shared handler: runs the job fn, writes result/failure, handles DLQ alert
     async function handleJob(handlerFn) {
       try {
@@ -116,6 +125,7 @@ async function runWorker() {
 
         const { status: currentStatus } = checkCancelled.get(id);
         if (currentStatus === "cancelled") {
+          log("job cancelled", { id, type, stage: "post-run" });
           logger.info(
             `job with id=${id} was cancelled during processing - skipping finalization`,
           );
@@ -124,6 +134,7 @@ async function runWorker() {
 
         const now = new Date().toISOString();
         finishCompleted(attemptCount + 1, JSON.stringify(result), now, id);
+        log("job completed", { id, type, attemptCount: attemptCount + 1 });
         logger.info(`job with id=${id} (${type}) completed successfully`);
 
         if (interval) {
@@ -134,6 +145,15 @@ async function runWorker() {
           );
         }
       } catch (err) {
+        const { status: cancelledStatus } = checkCancelled.get(id);
+        if (cancelledStatus === "cancelled") {
+          log("job cancelled", { id, type, stage: "error-path" });
+          logger.info(
+            `job with id=${id} was cancelled while failing - skipping retry/failure finalization`,
+          );
+          return;
+        }
+
         const isPermanentFailure =
           err.message === "Invalid email address" ||
           err.message === "Subject is required";
@@ -143,6 +163,12 @@ async function runWorker() {
           if (isPermanentFailure || newAttemptCount >= maxRetries) {
             const now = new Date().toISOString();
             finishFailed(newAttemptCount, err.message, now, id);
+            log("job failed", {
+              id,
+              type,
+              attemptCount: newAttemptCount,
+              error: err.message,
+            });
             logger.info(
               `job with id=${id} (${type}) marked as "failed": ${err.message}`,
             );
@@ -163,6 +189,13 @@ async function runWorker() {
             const now = new Date().toISOString();
             const nextRetryAt = new Date(Date.now() + wait).toISOString();
             finishRetry(newAttemptCount, err.message, now, nextRetryAt, id);
+            log("retry attempted", {
+              id,
+              type,
+              attemptCount: newAttemptCount,
+              error: err.message,
+              nextRetryAt,
+            });
             logger.info(
               `job with id=${id} scheduled retry #${newAttemptCount} in ${Math.round(wait)}ms`,
             );

@@ -1,6 +1,7 @@
 import express from "express";
 import db from "../db.js";
 import { logger } from "../logger.js";
+import { log } from "../logger.js";
 import { emailHandler } from "../handlers/emailHandler.js";
 
 export const dlqRouter = express.Router();
@@ -22,9 +23,11 @@ dlqRouter.get("/", (req, res) => {
       .all();
 
     logger.info(`GET /dlq - returned ${jobs.length} job(s)`);
+    log("dlq listed", { count: jobs.length });
     res.status(200).json({ status: "success", data: jobs });
   } catch (err) {
     logger.error(`GET /dlq - failed: ${err.message}`);
+    log("dlq list failed", { error: err.message });
     res
       .status(500)
       .json({ status: "error", message: "Could not retrieve DLQ" });
@@ -69,15 +72,15 @@ dlqRouter.post("/:id/retry", (req, res) => {
     })(id, entry.id);
 
     logger.info(`POST /dlq/${id}/retry - job ${entry.id} reset to pending`);
-    res
-      .status(200)
-      .json({
-        status: "success",
-        message: "Job queued for retry",
-        jobId: entry.id,
-      });
+    log("dlq retry requested", { dlqId: Number(id), jobId: entry.id });
+    res.status(200).json({
+      status: "success",
+      message: "Job queued for retry",
+      jobId: entry.id,
+    });
   } catch (err) {
     logger.error(`POST /dlq/${id}/retry - failed: ${err.message}`);
+    log("dlq retry failed", { dlqId: Number(id), error: err.message });
     res.status(500).json({ status: "error", message: "Could not retry job" });
   }
 });

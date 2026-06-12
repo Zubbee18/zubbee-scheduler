@@ -62,6 +62,7 @@ jobRouter.post("/", (req, res) => {
   } catch (err) {
     // if it fails
     logger.error(`POST /job - DB insert failed: ${err.message}`);
+    log("job creation failed", { type, error: err.message });
     res.status(500).json({
       status: "error",
       message: "job was not recorded successfully",
@@ -104,7 +105,8 @@ jobRouter.get("/:id", (req, res) => {
   const getjobAndAttempts = db.prepare(
     "SELECT j.*, a.status as attemptStatus, a.response, a.createdAt as attemptCreatedAt FROM jobs AS j \
       LEFT JOIN attempts AS a ON j.id = a.jobId \
-      WHERE j.id = ?",
+      WHERE j.id = ? \
+      ORDER BY a.createdAt ASC",
   );
 
   try {
@@ -124,6 +126,7 @@ jobRouter.get("/:id", (req, res) => {
     });
   } catch (err) {
     logger.error(`GET /jobs/${id} - DB query failed: ${err.message}`);
+    log("job fetch failed", { id, error: err.message });
     res
       .status(500)
       .json({ status: "error", message: "Could not retrieve job" });
@@ -158,12 +161,14 @@ jobRouter.get("/", (req, res) => {
     logger.info(
       `GET /jobs${status ? `?status=${status}` : ""} - Returned ${result.length} job(s)`,
     );
+    log("jobs listed", { status: status ?? "all", count: result.length });
     res.status(200).json({
       status: "success",
       data: result,
     });
   } catch (err) {
     logger.error(`GET /jobs - DB query failed: ${err.message}`);
+    log("jobs list failed", { status: status ?? "all", error: err.message });
     res
       .status(500)
       .json({ status: "error", message: "Could not retrieve jobs" });
@@ -201,6 +206,7 @@ jobRouter.patch("/:id/cancel", (req, res) => {
       });
     }
 
+    log("job cancelled", { id, previousStatus: job.status });
     logger.info(`PATCH /jobs/${id}/cancel - cancelled`);
     return res.status(200).json({
       status: "success",
@@ -208,6 +214,7 @@ jobRouter.patch("/:id/cancel", (req, res) => {
     });
   } catch (err) {
     logger.error(`PATCH /jobs/${id}/cancel - DB query failed: ${err.message}`);
+    log("job cancel failed", { id, error: err.message });
     res.status(500).json({
       status: "error",
       message: "Could not cancel job. Please try again later.",
@@ -299,7 +306,9 @@ function validatePostJob(type, payload, priority, interval, scheduled_at, res) {
   let scheduledAtTs = Date.now();
   if (scheduled_at !== undefined && scheduled_at !== null) {
     scheduledAtTs =
-      typeof scheduled_at === "number" ? scheduled_at : Date.parse(scheduled_at);
+      typeof scheduled_at === "number"
+        ? scheduled_at
+        : Date.parse(scheduled_at);
 
     if (!Number.isFinite(scheduledAtTs)) {
       res.status(400).json({
