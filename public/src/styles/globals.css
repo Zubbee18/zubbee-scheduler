@@ -1,0 +1,9 @@
+/* Tailwind v4 sets button{font-size:var(--text-base)} which breaks parent-class inheritance.
+   Restore inherit so text-[12px] / text-[13px] on parent or button itself works correctly. */
+@layer base {
+  button {
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+  }
+}
