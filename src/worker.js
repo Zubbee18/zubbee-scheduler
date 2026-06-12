@@ -153,7 +153,7 @@ async function runWorker() {
                 `DLQ threshold reached: ${count} jobs in dead-letter queue`,
               );
               emailHandler({
-                to: process.env.ALERT_EMAIL || "admin@example.com",
+                to: process.env.ALERT_EMAIL || "zubbeed21.18@gmail.com",
                 subject: `[Alert] DLQ has ${count} failed jobs`,
               }).catch(() => {});
             }
