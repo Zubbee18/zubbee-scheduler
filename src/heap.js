@@ -21,7 +21,7 @@ export class MinHeap {
 
   compare(a, b) {
     const now = Date.now();
-    const timeMs = process.env.TIMING_MIN * 60 * 1000;
+    const timeMs = process.env.TIMING_MIN ?? 2 * 60 * 1000;
 
     const aTooLong = now - new Date(a.createdAt).getTime() >= timeMs;
     const bTooLong = now - new Date(b.createdAt).getTime() >= timeMs;

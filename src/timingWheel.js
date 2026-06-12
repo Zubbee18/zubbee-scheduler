@@ -14,7 +14,7 @@ export class TimingWheel {
   schedule(job) {
     const { id, priority, scheduledAt, createdAt } = job;
     const now = Date.now();
-    const timeMs = process.env.TIMING_MIN * 60 * 1000;
+    const timeMs = process.env.TIMING_MIN ?? 2 * 60 * 1000;
     const scheduledMs = new Date(scheduledAt).getTime();
     const createdAtMs = new Date(createdAt).getTime();
     const delayMs = Math.max(1000, scheduledMs - now);
