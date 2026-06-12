@@ -1,7 +1,7 @@
 // All API calls for the Zubbee Scheduler dashboard.
-// One function per endpoint. Base URL points to the local backend.
+// One function per endpoint. Base URL is set via VITE_API_URL env var in production.
 
-const BASE = "http://localhost:3000";
+const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 export type JobStatus =
   | "pending"
