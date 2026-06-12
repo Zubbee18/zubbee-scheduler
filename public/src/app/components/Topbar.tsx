@@ -1,4 +1,5 @@
 import { ChevronDown, FileText, Menu } from "lucide-react";
+import { API_BASE_URL } from "../api";
 import { Flame } from "./primitives";
 
 export function Topbar({ onMenu }: { onMenu: () => void }) {
@@ -20,9 +21,14 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
       </button>
 
       <div className="ml-auto flex items-center gap-1">
-        <button className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-neutral-600 hover:bg-neutral-100 sm:flex">
+        <a
+          className="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-neutral-600 hover:bg-neutral-100 sm:flex"
+          href={`${API_BASE_URL}/api-docs`}
+          target="_blank"
+          rel="noreferrer"
+        >
           <FileText className="size-4" /> Docs
-        </button>
+        </a>
         <button className="ml-1 rounded-lg bg-orange-500 px-3 py-1.5 text-[13px] text-white hover:bg-orange-600">
           Upgrade
         </button>

@@ -30,7 +30,6 @@ export default function App() {
       <JobDrawerProvider>
         <div
           className="flex h-full w-full overflow-hidden bg-white text-neutral-900"
-          style={{ fontFamily: "Inter, system-ui, sans-serif" }}
         >
           {/* Desktop sidebar */}
           <div className="hidden md:block">

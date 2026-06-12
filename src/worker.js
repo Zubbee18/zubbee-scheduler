@@ -1,7 +1,7 @@
-import db from "./db";
+import db from "./db.js";
 import { MinHeap as HeapClass } from "./heap.js";
 import { TimingWheel } from "./timingWheel.js";
-import { logger } from "./logger";
+import { logger } from "./logger.js";
 import { emailHandler } from "./handlers/emailHandler.js";
 import { genericHandler } from "./handlers/genericHandler.js";
 

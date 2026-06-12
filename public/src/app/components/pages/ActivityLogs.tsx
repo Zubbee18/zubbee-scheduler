@@ -4,7 +4,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Filter,
   Eye,
   XCircle,
   AlertCircle,
@@ -12,11 +11,11 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { api, type Job, type JobStatus } from "../../api";
+import { API_BASE_URL } from "../../api";
 import { useToast } from "../../context/ToastContext";
 import { JobDetailModal } from "../JobDetailModal";
 import { usePolling } from "../../hooks/usePolling";
 
-const TYPE_FILTERS = ["All Types", "send_email", "other"] as const;
 const DATE_FILTERS = [
   "Last 7 days",
   "Last 24 hours",
@@ -31,7 +30,6 @@ const STATUS_FILTERS = [
   "failed",
   "cancelled",
 ] as const;
-const PRIORITY_FILTERS = ["All Priorities", "1", "2", "3"] as const;
 
 const PAGE_SIZE = 15;
 
@@ -202,11 +200,7 @@ export function ActivityLogs() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>(TYPE_FILTERS[0]);
   const [statusFilter, setStatusFilter] = useState<string>(STATUS_FILTERS[0]);
-  const [priorityFilter, setPriorityFilter] = useState<string>(
-    PRIORITY_FILTERS[0],
-  );
   const [dateFilter, setDateFilter] = useState<string>(DATE_FILTERS[0]);
   const [page, setPage] = useState(1);
   const [viewJobId, setViewJobId] = useState<number | null>(null);
@@ -245,19 +239,11 @@ export function ActivityLogs() {
         !query ||
         j.type.toLowerCase().includes(query.toLowerCase()) ||
         String(j.id).includes(query);
-      const matchType =
-        typeFilter === TYPE_FILTERS[0] ||
-        (typeFilter === "other"
-          ? j.type !== "send_email"
-          : j.type === typeFilter);
-      const matchPriority =
-        priorityFilter === PRIORITY_FILTERS[0] ||
-        String(j.priority) === priorityFilter;
       const matchDate =
         cutoff === 0 || new Date(j.createdAt).getTime() > cutoff;
-      return matchQuery && matchType && matchPriority && matchDate;
+      return matchQuery && matchDate;
     });
-  }, [jobs, query, typeFilter, priorityFilter, cutoff]);
+  }, [jobs, query, cutoff]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -313,17 +299,6 @@ export function ActivityLogs() {
             className="w-full bg-transparent text-[13px] outline-none placeholder:text-neutral-400"
           />
         </div>
-        {/* Type filter */}
-        <Dropdown
-          options={TYPE_FILTERS}
-          value={typeFilter}
-          onChange={(v) => {
-            setTypeFilter(v);
-            setPage(1);
-          }}
-          icon={<Filter className="size-3.5 text-neutral-500" />}
-          header="Filter by Type"
-        />
         {/* Status filter */}
         <Dropdown
           options={STATUS_FILTERS}
@@ -333,16 +308,6 @@ export function ActivityLogs() {
             setPage(1);
           }}
           header="Filter by Status"
-        />
-        {/* Priority filter */}
-        <Dropdown
-          options={PRIORITY_FILTERS}
-          value={priorityFilter}
-          onChange={(v) => {
-            setPriorityFilter(v);
-            setPage(1);
-          }}
-          header="Filter by Priority"
         />
         {/* Date filter — pushed far right */}
         <div className="ml-auto">
@@ -384,7 +349,7 @@ export function ActivityLogs() {
               Cannot reach the server
             </p>
             <p className="mt-1 text-[13px] text-neutral-400">
-              Make sure the backend is running at localhost:3000
+              Make sure the backend is running at {API_BASE_URL}
             </p>
           </div>
         ) : paged.length === 0 ? (

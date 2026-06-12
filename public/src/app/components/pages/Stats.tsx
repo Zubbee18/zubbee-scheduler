@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { AlertTriangle } from "lucide-react";
 import { BarMini } from "../primitives";
-import { api, type JobCounts } from "../../api";
+import { api, API_BASE_URL, type JobCounts } from "../../api";
 import { usePolling } from "../../hooks/usePolling";
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ export function Stats() {
       {!loading && fetchError && !hasLoaded && (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
           <span className="font-medium">Cannot reach the server.</span>
-          <span>Make sure the backend is running at localhost:3000.</span>
+          <span>Make sure the backend is running at {API_BASE_URL}.</span>
         </div>
       )}
 

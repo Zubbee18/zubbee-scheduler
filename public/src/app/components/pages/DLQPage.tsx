@@ -7,7 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { api, type DLQEntry } from "../../api";
+import { api, API_BASE_URL, type DLQEntry } from "../../api";
 import { useToast } from "../../context/ToastContext";
 import { useJobDrawer } from "../../context/JobDrawerContext";
 import { JobDetailModal } from "../JobDetailModal";
@@ -149,7 +149,7 @@ export function DLQPage() {
               Cannot reach the server
             </p>
             <p className="text-[12px] text-neutral-400">
-              Make sure the backend is running at localhost:3000
+              Make sure the backend is running at {API_BASE_URL}
             </p>
           </div>
         ) : paged.length === 0 ? (

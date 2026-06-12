@@ -33,6 +33,11 @@ const JOB_TYPES: JobTypeOption[] = [
     label: "Send Email",
     payloadTemplate: JSON.stringify({ to: "", subject: "", body: "" }, null, 2),
   },
+  {
+    value: "other",
+    label: "Other",
+    payloadTemplate: JSON.stringify({ action: "", details: "" }, null, 2),
+  },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -688,32 +693,13 @@ function CreateJobForm() {
             <span className="text-[14px] text-neutral-400 truncate">
               {jobType === "send_email"
                 ? "to, subject, body…"
-                : "configure job…"}
+                : "action, details…"}
             </span>
           </div>
         </div>
 
-        {/* Bottom row: source/format controls + Get code + CTA */}
+        {/* Bottom row: controls + CTA */}
         <div className="flex items-center gap-2 border-t border-neutral-100 px-2 py-2 mt-1">
-          {/* Source pill button */}
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-[12px] text-neutral-600 hover:bg-neutral-50"
-          >
-            <span className="grid size-3.5 place-items-center rounded-sm bg-neutral-200 text-[9px] text-neutral-500">
-              &#9776;
-            </span>
-            Source: {priority}
-          </button>
-
-          {/* Doc count pill */}
-          <button
-            type="button"
-            className="flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-[12px] text-neutral-600 hover:bg-neutral-50"
-          >
-            <Code2 className="size-3.5 text-neutral-400" />1
-          </button>
-
           {/* Options button */}
           <button
             type="button"

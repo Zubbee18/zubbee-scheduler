@@ -1,7 +1,11 @@
 // All API calls for the Zubbee Scheduler dashboard.
-// One function per endpoint. Base URL is set via VITE_API_URL env var in production.
+// One function per endpoint. Base URL is set via VITE_API_URL in the frontend env.
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+
+function oneMinuteFromNow(): string {
+  return new Date(Date.now() + 60_000).toISOString();
+}
 
 export type JobStatus =
   | "pending"
@@ -67,7 +71,7 @@ export interface CreateJobPayload {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
@@ -182,14 +186,14 @@ export const api = {
 
   createJob: (data: CreateJobPayload) =>
     // Map camelCase scheduledAt → snake_case scheduled_at for backend.
-    // scheduledAt is NOT NULL in the DB so we default to now when omitted.
+    // scheduledAt is NOT NULL in the DB so we default to one minute from now when omitted.
     request<{ id: number; status: string }>("/jobs", {
       method: "POST",
       body: JSON.stringify({
         type: data.type,
         payload: data.payload,
         priority: data.priority,
-        scheduled_at: data.scheduledAt || new Date().toISOString(),
+        scheduled_at: data.scheduledAt || oneMinuteFromNow(),
         interval: data.interval ?? undefined,
         dependsOn: data.dependsOn ? [data.dependsOn] : undefined,
       }),
