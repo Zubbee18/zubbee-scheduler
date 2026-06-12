@@ -42,8 +42,8 @@ export interface JobWithHistory extends Job {
 }
 
 export interface DLQEntry {
-  id: number;       // dlq entry id
-  jobId: number;    // original job id
+  id: number; // dlq entry id
+  jobId: number; // original job id
   reason: string;
   createdAt: string;
   job: Job;
@@ -156,19 +156,27 @@ function adaptJobWithHistory(rows: any[]): JobWithHistory {
 }
 
 export const api = {
-  getJobs: async (params?: { status?: string; priority?: number; type?: string }): Promise<Job[]> => {
+  getJobs: async (params?: {
+    status?: string;
+    priority?: number;
+    type?: string;
+  }): Promise<Job[]> => {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);
     if (params?.priority) q.set("priority", String(params.priority));
     if (params?.type) q.set("type", params.type);
     const qs = q.toString();
-    const res = await request<{ status: string; data: Job[] }>(`/jobs${qs ? `?${qs}` : ""}`);
+    const res = await request<{ status: string; data: Job[] }>(
+      `/jobs${qs ? `?${qs}` : ""}`,
+    );
     return unwrap(res);
   },
 
   getJob: async (id: number): Promise<JobWithHistory> => {
     // Backend returns { status, data: [row, row, ...] } — one row per attempt
-    const res = await request<{ status: string; data: unknown[] }>(`/jobs/${id}`);
+    const res = await request<{ status: string; data: unknown[] }>(
+      `/jobs/${id}`,
+    );
     return adaptJobWithHistory(unwrap(res));
   },
 
@@ -191,7 +199,9 @@ export const api = {
   },
 
   getJobCounts: async (): Promise<JobCounts> => {
-    const res = await request<{ status: string; data: JobCounts }>("/jobs/counts");
+    const res = await request<{ status: string; data: JobCounts }>(
+      "/jobs/counts",
+    );
     return unwrap(res);
   },
 
