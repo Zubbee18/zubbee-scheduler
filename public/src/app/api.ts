@@ -181,14 +181,15 @@ export const api = {
   },
 
   createJob: (data: CreateJobPayload) =>
-    // Map camelCase scheduledAt → snake_case scheduled_at for backend
+    // Map camelCase scheduledAt → snake_case scheduled_at for backend.
+    // scheduledAt is NOT NULL in the DB so we default to now when omitted.
     request<{ id: number; status: string }>("/jobs", {
       method: "POST",
       body: JSON.stringify({
         type: data.type,
         payload: data.payload,
         priority: data.priority,
-        scheduled_at: data.scheduledAt ?? undefined,
+        scheduled_at: data.scheduledAt || new Date().toISOString(),
         interval: data.interval ?? undefined,
         dependsOn: data.dependsOn ? [data.dependsOn] : undefined,
       }),
