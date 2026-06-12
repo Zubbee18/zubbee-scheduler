@@ -327,12 +327,14 @@ export function ActivityLogs() {
       {/* Table */}
       <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white">
         {/* Header row — matches Firecrawl column layout */}
-        <div className="grid grid-cols-[110px_1fr_130px_110px_90px_140px_80px] items-center gap-3 border-b border-neutral-200 px-6 py-3 text-[11px] font-medium uppercase tracking-wider text-neutral-400">
+        <div className="grid grid-cols-[110px_1fr_130px_110px_90px_160px_120px_140px_80px] items-center gap-3 border-b border-neutral-200 px-6 py-3 text-[11px] font-medium uppercase tracking-wider text-neutral-400">
           <span>Type</span>
           <span>ID</span>
           <span>Status</span>
           <span>Priority</span>
           <span># Retries</span>
+          <span>Scheduled At</span>
+          <span>Interval</span>
           <span>Time</span>
           <span className="text-right">Actions</span>
         </div>
@@ -369,7 +371,7 @@ export function ActivityLogs() {
           paged.map((job) => (
             <div
               key={job.id}
-              className="grid grid-cols-[110px_1fr_130px_110px_90px_140px_80px] items-center gap-3 border-b border-neutral-100 px-6 py-4 text-[13px] last:border-0 hover:bg-neutral-50/70"
+              className="grid grid-cols-[110px_1fr_130px_110px_90px_160px_120px_140px_80px] items-center gap-3 border-b border-neutral-100 px-6 py-4 text-[13px] last:border-0 hover:bg-neutral-50/70"
             >
               {/* Type */}
               <span className="font-mono text-[11px] uppercase tracking-wider text-neutral-500">
@@ -386,6 +388,28 @@ export function ActivityLogs() {
               {/* Retries */}
               <span className="tabular-nums text-[13px] text-neutral-600">
                 {job.attemptCount}/{job.maxRetries}
+              </span>
+              {/* Scheduled At */}
+              <span className="leading-tight text-[13px] text-neutral-700">
+                {job.scheduledAt
+                  ? new Date(job.scheduledAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "2-digit",
+                      year: "2-digit",
+                    })
+                  : "Immediate"}
+                <span className="block text-[11px] text-neutral-400">
+                  {job.scheduledAt
+                    ? new Date(job.scheduledAt).toLocaleTimeString("en-US", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "Runs now"}
+                </span>
+              </span>
+              {/* Interval */}
+              <span className="text-[13px] text-neutral-600">
+                {job.interval ?? "—"}
               </span>
               {/* Time */}
               <span className="leading-tight text-[13px] text-neutral-700">

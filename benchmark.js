@@ -1,6 +1,6 @@
-import performance from "perf_hooks";
-import MinHeap from "./src/heap";
-import TimingWheel from "./src/timingWheel";
+import { performance } from "node:perf_hooks";
+import { MinHeap } from "./src/heap.js";
+import { TimingWheel } from "./src/timingWheel.js";
 
 const JOBS = 10_000;
 
@@ -25,7 +25,12 @@ const heapExtractEnd = performance.now();
 // --- Timing wheel benchmark ---
 const wheel = new TimingWheel();
 const wheelInsertStart = performance.now();
-jobs.forEach((j) => wheel.insert(j, j.delayMs));
+jobs.forEach((j) =>
+  wheel.schedule({
+    ...j,
+    scheduledAt: new Date(Date.now() + j.delayMs).toISOString(),
+  }),
+);
 const wheelInsertEnd = performance.now();
 
 // For timing wheel "extraction" we simulate ticking through all slots

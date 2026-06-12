@@ -3,10 +3,6 @@
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
-function oneMinuteFromNow(): string {
-  return new Date(Date.now() + 60_000).toISOString();
-}
-
 export type JobStatus =
   | "pending"
   | "processing"
@@ -186,14 +182,14 @@ export const api = {
 
   createJob: (data: CreateJobPayload) =>
     // Map camelCase scheduledAt → snake_case scheduled_at for backend.
-    // scheduledAt is NOT NULL in the DB so we default to one minute from now when omitted.
+    // When scheduledAt is omitted, the backend treats the job as runnable immediately.
     request<{ id: number; status: string }>("/jobs", {
       method: "POST",
       body: JSON.stringify({
         type: data.type,
         payload: data.payload,
         priority: data.priority,
-        scheduled_at: data.scheduledAt || oneMinuteFromNow(),
+        scheduled_at: data.scheduledAt ?? undefined,
         interval: data.interval ?? undefined,
         dependsOn: data.dependsOn ? [data.dependsOn] : undefined,
       }),

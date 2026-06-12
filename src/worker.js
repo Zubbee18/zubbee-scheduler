@@ -1,6 +1,5 @@
 import db from "./db.js";
 import { MinHeap as HeapClass } from "./heap.js";
-import { TimingWheel } from "./timingWheel.js";
 import { logger } from "./logger.js";
 import { emailHandler } from "./handlers/emailHandler.js";
 import { genericHandler } from "./handlers/genericHandler.js";
@@ -12,7 +11,7 @@ async function runWorker() {
   const getReadyJobs = db.prepare(`
     SELECT * FROM jobs 
     WHERE status = 'pending'
-    AND scheduledAt <= datetime('now')
+    AND datetime(scheduledAt) <= datetime('now')
   `);
 
   const lockProcessing = db.prepare(`
@@ -197,26 +196,30 @@ function getFromHeap() {
     WHERE d.jobId = ?
   `);
 
-  // get job from heap
-  const processingJob = MinHeap.extractMin();
+  const blockedJobs = [];
 
-  if (processingJob) {
-    // check dependencies
+  while (MinHeap.size() > 0) {
+    const processingJob = MinHeap.extractMin();
+    if (!processingJob) break;
+
     const dependencies = getDependencies.all(processingJob.id);
+    const allDone = dependencies.every((dep) => dep.status === "completed");
 
-    if (dependencies.length === 0) {
+    if (dependencies.length === 0 || allDone) {
+      for (const blockedJob of blockedJobs) {
+        MinHeap.insert(blockedJob);
+      }
       return processingJob;
     }
 
-    const allDone = dependencies.every((dep) => dep.status === "completed");
-    if (!allDone) {
-      return null;
-    }
+    blockedJobs.push(processingJob);
+  }
 
-    return processingJob;
+  for (const blockedJob of blockedJobs) {
+    MinHeap.insert(blockedJob);
   }
 
   return null;
 }
 
-runWorker();
+export { runWorker };

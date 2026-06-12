@@ -28,7 +28,7 @@ jobRouter.post("/", (req, res) => {
       payload: JSON.stringify(sanitizedPayload),
       priority: priority ?? 2,
       interval: normalizedInterval ?? null,
-      scheduledAt: scheduled_at,
+      scheduledAt: new Date(scheduledAtTs).toISOString(),
     });
 
     logger.info(
@@ -296,30 +296,18 @@ function validatePostJob(type, payload, priority, interval, scheduled_at, res) {
     }
   }
 
-  if (scheduled_at === undefined) {
-    res.status(400).json({
-      status: "error",
-      message: "scheduled at time must be present",
-    });
-    return { isValid: false };
-  }
-  const scheduledAtTs =
-    typeof scheduled_at === "number" ? scheduled_at : Date.parse(scheduled_at);
+  let scheduledAtTs = Date.now();
+  if (scheduled_at !== undefined && scheduled_at !== null) {
+    scheduledAtTs =
+      typeof scheduled_at === "number" ? scheduled_at : Date.parse(scheduled_at);
 
-  if (!Number.isFinite(scheduledAtTs)) {
-    res.status(400).json({
-      status: "error",
-      message: "scheduled_at must be a valid date",
-    });
-    return { isValid: false };
-  }
-
-  if (scheduledAtTs <= Date.now()) {
-    res.status(400).json({
-      status: "error",
-      message: "Scheduled date must be in the future",
-    });
-    return { isValid: false };
+    if (!Number.isFinite(scheduledAtTs)) {
+      res.status(400).json({
+        status: "error",
+        message: "scheduled_at must be a valid date",
+      });
+      return { isValid: false };
+    }
   }
 
   return { isValid: true, sanitizedPayload, normalizedInterval, scheduledAtTs };
