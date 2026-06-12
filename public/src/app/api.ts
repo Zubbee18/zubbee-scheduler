@@ -42,8 +42,8 @@ export interface JobWithHistory extends Job {
 }
 
 export interface DLQEntry {
-  id: number;
-  jobId: number;
+  id: number;       // dlq entry id
+  jobId: number;    // original job id
   reason: string;
   createdAt: string;
   job: Job;
@@ -89,27 +89,116 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// Unwrap the backend's { status, data } envelope
+function unwrap<T>(res: { status: string; data: T }): T {
+  return res.data;
+}
+
+// Transform a flat DLQ row from backend into the DLQEntry shape the UI expects
+// Backend row: { dlqId, reason, failedAt, id (job id), type, payload, priority, attemptCount, maxRetries, lastError, updatedAt }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adaptDLQEntry(row: any): DLQEntry {
+  return {
+    id: row.dlqId,
+    jobId: row.id,
+    reason: row.reason ?? row.lastError ?? "Unknown error",
+    createdAt: row.failedAt ?? row.createdAt,
+    job: {
+      id: row.id,
+      type: row.type,
+      payload: row.payload,
+      priority: row.priority,
+      status: "failed",
+      attemptCount: row.attemptCount,
+      maxRetries: row.maxRetries,
+      scheduledAt: null,
+      interval: null,
+      lastError: row.lastError,
+      result: null,
+      createdAt: row.failedAt ?? row.updatedAt,
+      updatedAt: row.updatedAt,
+    },
+  };
+}
+
+// Transform the backend's array of joined job+attempt rows into JobWithHistory
+// Backend returns: [{ ...jobFields, attemptStatus, response, attemptCreatedAt }, ...]
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adaptJobWithHistory(rows: any[]): JobWithHistory {
+  if (!rows || rows.length === 0) throw new Error("Job not found");
+  const base = rows[0];
+  const attempts: AttemptHistory[] = rows
+    .filter((r) => r.attemptStatus !== null && r.attemptStatus !== undefined)
+    .map((r, i) => ({
+      id: i + 1,
+      jobId: base.id,
+      status: r.attemptStatus as "success" | "error",
+      message: r.response ?? null,
+      attemptNumber: i + 1,
+      createdAt: r.attemptCreatedAt ?? base.createdAt,
+    }));
+  return {
+    id: base.id,
+    type: base.type,
+    payload: base.payload,
+    priority: base.priority,
+    status: base.status,
+    attemptCount: base.attemptCount,
+    maxRetries: base.maxRetries,
+    scheduledAt: base.scheduledAt,
+    interval: base.interval,
+    lastError: base.lastError,
+    result: base.result,
+    createdAt: base.createdAt,
+    updatedAt: base.updatedAt,
+    attempts,
+  };
+}
+
 export const api = {
-  getJobs: (params?: { status?: string; priority?: number; type?: string }) => {
+  getJobs: async (params?: { status?: string; priority?: number; type?: string }): Promise<Job[]> => {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);
     if (params?.priority) q.set("priority", String(params.priority));
     if (params?.type) q.set("type", params.type);
     const qs = q.toString();
-    return request<Job[]>(`/jobs${qs ? `?${qs}` : ""}`);
+    const res = await request<{ status: string; data: Job[] }>(`/jobs${qs ? `?${qs}` : ""}`);
+    return unwrap(res);
   },
 
-  getJob: (id: number) => request<JobWithHistory>(`/jobs/${id}`),
+  getJob: async (id: number): Promise<JobWithHistory> => {
+    // Backend returns { status, data: [row, row, ...] } — one row per attempt
+    const res = await request<{ status: string; data: unknown[] }>(`/jobs/${id}`);
+    return adaptJobWithHistory(unwrap(res));
+  },
 
   createJob: (data: CreateJobPayload) =>
-    request<Job>("/jobs", { method: "POST", body: JSON.stringify(data) }),
+    // Map camelCase scheduledAt → snake_case scheduled_at for backend
+    request<{ id: number; status: string }>("/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        type: data.type,
+        payload: data.payload,
+        priority: data.priority,
+        scheduled_at: data.scheduledAt ?? undefined,
+        interval: data.interval ?? undefined,
+        dependsOn: data.dependsOn ? [data.dependsOn] : undefined,
+      }),
+    }),
 
-  cancelJob: (id: number) =>
-    request<Job>(`/jobs/${id}/cancel`, { method: "PATCH" }),
+  cancelJob: async (id: number): Promise<void> => {
+    await request(`/jobs/${id}/cancel`, { method: "PATCH" });
+  },
 
-  getJobCounts: () => request<JobCounts>("/jobs/counts"),
+  getJobCounts: async (): Promise<JobCounts> => {
+    const res = await request<{ status: string; data: JobCounts }>("/jobs/counts");
+    return unwrap(res);
+  },
 
-  getDLQ: () => request<DLQEntry[]>("/dlq"),
+  getDLQ: async (): Promise<DLQEntry[]> => {
+    const res = await request<{ status: string; data: unknown[] }>("/dlq");
+    return unwrap(res).map(adaptDLQEntry);
+  },
 
   retryDLQ: (id: number) =>
     request<{ message: string }>(`/dlq/${id}/retry`, { method: "POST" }),
