@@ -1,7 +1,8 @@
 {
-  "name": "@figma/my-make-file",
+  "name": "@figma/zubbee-scheduler",
   "private": true,
   "version": "0.0.1",
+  "packageManager": "pnpm@11.0.8",
   "type": "module",
   "scripts": {
     "build": "vite build",
