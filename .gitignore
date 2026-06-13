@@ -5,4 +5,5 @@ database.db
 database.db-shm
 database.db-wal
 public/src/app/imports
+/dist
 

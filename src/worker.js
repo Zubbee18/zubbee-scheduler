@@ -61,6 +61,7 @@ async function runWorker() {
   const insertDLQ = db.prepare(
     "INSERT OR IGNORE INTO dlq (jobId, reason) VALUES (?, ?)",
   );
+
   const checkCancelled = db.prepare("SELECT status FROM jobs WHERE id = ?");
   const getDLQCount = db.prepare("SELECT COUNT(*) as count FROM dlq");
 
