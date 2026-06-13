@@ -234,9 +234,3 @@ I was already half into my backend work when I realised the tradeoffs that come 
 6. Nginx beginner guide: <https://nginx.org/en/docs/beginners_guide.html>
 7. DAG explanation with visuals: <https://www.youtube.com/results?search_query=DAG+directed+acyclic+graph+explained>
 8. Timing wheel deep dive: <https://blog.acolyer.org/2015/12/18/hashed-and-hierarchical-timing-wheels>
-
----
-
-## Live URL
-
-https://zubbee-scheduler.duckdns.org
