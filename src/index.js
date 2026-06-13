@@ -18,9 +18,9 @@ const swaggerDocument = require("./swagger.json");
 
 const app = express();
 
-const allowedOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(",").map((origin) => origin.trim())
-  : "*";
+const allowedOrigins = process.env.FRONTEND_URL.split(",").map((origin) =>
+  origin.trim(),
+);
 
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
