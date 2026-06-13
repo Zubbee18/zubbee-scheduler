@@ -21,8 +21,8 @@ function createJobTable() {
         lastError TEXT,
         result TEXT,
         lockedAt DATETIME,
-        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        createdAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        updatedAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       )
     `);
 }
@@ -36,7 +36,7 @@ function createAttemptTable() {
         error TEXT,
         response TEXT,
         attemptNumber INTEGER NOT NULL,
-        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        createdAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       )
     `);
 }
@@ -57,7 +57,7 @@ function createDLQTable() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         jobId INTEGER NOT NULL REFERENCES jobs(id),
         reason TEXT,
-        createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        createdAt TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       )
     `);
 }
