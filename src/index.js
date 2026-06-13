@@ -1,3 +1,8 @@
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+
+dotenv.config({ path: fileURLToPath(new URL("./.env", import.meta.url)) });
+
 import validator from "validator";
 import express from "express";
 import cors from "cors";
@@ -12,7 +17,12 @@ const require = createRequire(import.meta.url);
 const swaggerDocument = require("./swagger.json");
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(",").map((origin) => origin.trim())
+  : "*";
+
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
