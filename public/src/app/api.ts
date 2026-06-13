@@ -1,7 +1,8 @@
 // All API calls for the Zubbee Scheduler dashboard.
 // One function per endpoint. Base URL is set via VITE_API_URL in the frontend env.
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 export type JobStatus =
   | "pending"
@@ -66,6 +67,15 @@ export interface CreateJobPayload {
   dependsOn?: number | null;
 }
 
+interface JobDetailResponse {
+  job: Job;
+  attempts: Array<{
+    attemptStatus: "success" | "error";
+    response: string | null;
+    attemptCreatedAt: string | null;
+  }>;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -122,35 +132,27 @@ function adaptDLQEntry(row: any): DLQEntry {
 }
 
 // Transform the backend's array of joined job+attempt rows into JobWithHistory
-// Backend returns: [{ ...jobFields, attemptStatus, response, attemptCreatedAt }, ...]
+// Backend returns: { job, attempts }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function adaptJobWithHistory(rows: any[]): JobWithHistory {
-  if (!rows || rows.length === 0) throw new Error("Job not found");
-  const base = rows[0];
-  const attempts: AttemptHistory[] = rows
-    .filter((r) => r.attemptStatus !== null && r.attemptStatus !== undefined)
-    .map((r, i) => ({
-      id: i + 1,
-      jobId: base.id,
-      status: r.attemptStatus as "success" | "error",
-      message: r.response ?? null,
-      attemptNumber: i + 1,
-      createdAt: r.attemptCreatedAt ?? base.createdAt,
-    }));
+function adaptJobWithHistory(data: {
+  job: Job;
+  attempts: Array<{
+    attemptStatus: "success" | "error";
+    response: string | null;
+    attemptCreatedAt: string | null;
+  }>;
+}): JobWithHistory {
+  if (!data?.job) throw new Error("Job not found");
+  const attempts: AttemptHistory[] = data.attempts.map((attempt, i) => ({
+    id: i + 1,
+    jobId: data.job.id,
+    status: attempt.attemptStatus,
+    message: attempt.response ?? null,
+    attemptNumber: i + 1,
+    createdAt: attempt.attemptCreatedAt ?? data.job.createdAt,
+  }));
   return {
-    id: base.id,
-    type: base.type,
-    payload: base.payload,
-    priority: base.priority,
-    status: base.status,
-    attemptCount: base.attemptCount,
-    maxRetries: base.maxRetries,
-    scheduledAt: base.scheduledAt,
-    interval: base.interval,
-    lastError: base.lastError,
-    result: base.result,
-    createdAt: base.createdAt,
-    updatedAt: base.updatedAt,
+    ...data.job,
     attempts,
   };
 }
@@ -173,8 +175,8 @@ export const api = {
   },
 
   getJob: async (id: number): Promise<JobWithHistory> => {
-    // Backend returns { status, data: [row, row, ...] } — one row per attempt
-    const res = await request<{ status: string; data: unknown[] }>(
+    // Backend returns { status, data: { job, attempts } }
+    const res = await request<{ status: string; data: JobDetailResponse }>(
       `/jobs/${id}`,
     );
     return adaptJobWithHistory(unwrap(res));

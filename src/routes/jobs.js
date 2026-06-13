@@ -102,27 +102,41 @@ jobRouter.get("/counts", (req, res) => {
 jobRouter.get("/:id", (req, res) => {
   const { id } = req.params;
 
-  const getjobAndAttempts = db.prepare(
-    "SELECT j.*, a.status as attemptStatus, a.response, a.createdAt as attemptCreatedAt FROM jobs AS j \
-      LEFT JOIN attempts AS a ON j.id = a.jobId \
-      WHERE j.id = ? \
-      ORDER BY a.createdAt ASC",
+  const getJob = db.prepare("SELECT * FROM jobs WHERE id = ?");
+  const getAttempts = db.prepare(
+    "SELECT status as attemptStatus, response, createdAt as attemptCreatedAt FROM attempts WHERE jobId = ? ORDER BY createdAt ASC",
+  );
+  const getDependencies = db.prepare(
+    "SELECT dependsOnJobId FROM job_dependencies WHERE jobId = ? ORDER BY dependsOnJobId ASC",
   );
 
   try {
-    const jobHistory = getjobAndAttempts.all(id);
+    const job = getJob.get(id);
 
-    if (jobHistory.length === 0) {
+    if (!job) {
       logger.info(`GET /jobs/:${id} - Not found`);
       return res
         .status(404)
         .json({ status: "error", message: "job not found" });
     }
 
-    logger.info(`GET /jobs/${id} - Returned ${jobHistory.length} attempt(s)`);
+    const attempts = getAttempts.all(id);
+    const dependencies = getDependencies
+      .all(id)
+      .map((row) => row.dependsOnJobId);
+
+    logger.info(
+      `GET /jobs/${id} - Returned ${attempts.length} attempt(s) and ${dependencies.length} dependency(ies)`,
+    );
     res.status(200).json({
       status: "success",
-      data: jobHistory,
+      data: {
+        job: {
+          ...job,
+          dependsOn: dependencies[0] ?? null,
+        },
+        attempts,
+      },
     });
   } catch (err) {
     logger.error(`GET /jobs/${id} - DB query failed: ${err.message}`);

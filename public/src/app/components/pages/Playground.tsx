@@ -324,8 +324,10 @@ function OptionsPanel({
   setDependsOnId,
   dependsOnSearch,
   setDependsOnSearch,
+  dependsOnJob,
   jobSearchResults,
   onSearchJobs,
+  onSelectJob,
   onClose,
   scrapeResults,
   setScrapeResults,
@@ -348,14 +350,18 @@ function OptionsPanel({
   setDependsOnId: (v: number | null) => void;
   dependsOnSearch: string;
   setDependsOnSearch: (v: string) => void;
+  dependsOnJob: Job | null;
   jobSearchResults: Job[];
   onSearchJobs: (q: string) => void;
+  onSelectJob: (job: Job | null) => void;
   onClose: () => void;
   scrapeResults: boolean;
   setScrapeResults: (v: boolean) => void;
 }) {
+  const { openJob } = useJobDrawer();
+
   return (
-    <div className="mt-1.5 rounded-xl border border-neutral-200 bg-white shadow-lg overflow-hidden">
+    <div className="mt-1.5 rounded-xl border border-neutral-200 bg-white shadow-lg overflow-visible">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
         <span className="text-[13px] text-neutral-700 font-medium">
@@ -473,13 +479,34 @@ function OptionsPanel({
               This job will not run until the selected job has been completed.
             </p>
           </div>
-          {dependsOnId ? (
-            <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-[12px]">
-              <span className="text-neutral-700">Job #{dependsOnId}</span>
+          {dependsOnJob ? (
+            <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-[12px]">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-neutral-500">
+                    #{dependsOnJob.id}
+                  </span>
+                  <span className="truncate font-medium text-neutral-700 capitalize">
+                    {dependsOnJob.type.replace(/_/g, " ")}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-neutral-400 capitalize">
+                  Status: {dependsOnJob.status}
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() => setDependsOnId(null)}
-                className="ml-auto text-neutral-400 hover:text-neutral-600"
+                onClick={() => openJob(dependsOnJob.id)}
+                className="grid size-7 place-items-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+                title="View job details"
+              >
+                <ExternalLink className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectJob(null)}
+                className="grid size-7 place-items-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+                title="Clear dependency"
               >
                 <X className="size-3.5" />
               </button>
@@ -498,25 +525,34 @@ function OptionsPanel({
               {jobSearchResults.length > 0 && (
                 <div className="absolute left-0 right-0 z-20 mt-1 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
                   {jobSearchResults.map((j) => (
-                    <button
+                    <div
                       key={j.id}
-                      type="button"
-                      onClick={() => {
-                        setDependsOnId(j.id);
-                        setDependsOnSearch("");
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-neutral-700 hover:bg-neutral-100"
+                      className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] text-neutral-700 hover:bg-neutral-100"
                     >
-                      <span className="font-mono text-neutral-400">
-                        #{j.id}
-                      </span>
-                      <span className="capitalize">
-                        {j.type.replace(/_/g, " ")}
-                      </span>
-                      <span className="ml-auto text-neutral-400 capitalize">
-                        {j.status}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => onSelectJob(j)}
+                        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-0.5 py-1 text-left"
+                      >
+                        <span className="font-mono text-neutral-400">
+                          #{j.id}
+                        </span>
+                        <span className="truncate capitalize">
+                          {j.type.replace(/_/g, " ")}
+                        </span>
+                        <span className="ml-auto text-neutral-400 capitalize">
+                          {j.status}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openJob(j.id)}
+                        className="grid size-7 place-items-center rounded-md text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600"
+                        title="View job details"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -534,8 +570,7 @@ function OptionsPanel({
               setIntervalPreset("");
               setIntervalNum("");
               setScrapeResults(true);
-              setDependsOnId(null);
-              setDependsOnSearch("");
+              onSelectJob(null);
             }}
             className="rounded-lg border border-neutral-200 px-4 py-1.5 text-[12px] text-neutral-600 hover:bg-neutral-50"
           >
@@ -560,6 +595,7 @@ function CreateJobForm() {
   const [intervalPreset, setIntervalPreset] = useState("");
   const [dependsOnSearch, setDependsOnSearch] = useState("");
   const [dependsOnId, setDependsOnId] = useState<number | null>(null);
+  const [dependsOnJob, setDependsOnJob] = useState<Job | null>(null);
   const [jobSearchResults, setJobSearchResults] = useState<Job[]>([]);
   const [showOptions, setShowOptions] = useState(false);
   const [scrapeResults, setScrapeResults] = useState(true);
@@ -650,6 +686,21 @@ function CreateJobForm() {
     } catch {
       setJobSearchResults([]);
     }
+  };
+
+  const handleDependsOnSelect = (job: Job | null) => {
+    if (!job) {
+      setDependsOnId(null);
+      setDependsOnJob(null);
+      setDependsOnSearch("");
+      setJobSearchResults([]);
+      return;
+    }
+
+    setDependsOnId(job.id);
+    setDependsOnJob(job);
+    setDependsOnSearch("");
+    setJobSearchResults([]);
   };
 
   const typeOptions = JOB_TYPES.map((j) => ({
@@ -760,8 +811,10 @@ function CreateJobForm() {
           setDependsOnId={setDependsOnId}
           dependsOnSearch={dependsOnSearch}
           setDependsOnSearch={setDependsOnSearch}
+          dependsOnJob={dependsOnJob}
           jobSearchResults={jobSearchResults}
           onSearchJobs={handleDependsOnSearch}
+          onSelectJob={handleDependsOnSelect}
           onClose={() => setShowOptions(false)}
           scrapeResults={scrapeResults}
           setScrapeResults={setScrapeResults}

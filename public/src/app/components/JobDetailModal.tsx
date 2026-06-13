@@ -1,5 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { X, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
+import {
+  X,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Loader2,
+  ExternalLink,
+} from "lucide-react";
 import { api, type JobWithHistory, type AttemptHistory } from "../api";
 
 // Skeleton for loading state
@@ -121,16 +128,21 @@ export function JobDetailModal({
   const [job, setJob] = useState<JobWithHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState(jobId);
+
+  useEffect(() => {
+    setActiveJobId(jobId);
+  }, [jobId]);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     api
-      .getJob(jobId)
+      .getJob(activeJobId)
       .then(setJob)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [jobId]);
+  }, [activeJobId]);
 
   // Close on Escape key
   useEffect(() => {
@@ -222,6 +234,25 @@ export function JobDetailModal({
                 </Field>
                 <Field label="Interval">
                   {job.interval ?? (
+                    <span className="text-neutral-400">None</span>
+                  )}
+                </Field>
+                <Field label="Depends On">
+                  {job.dependsOn ? (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[12px]">
+                        #{job.dependsOn}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveJobId(job.dependsOn ?? job.id)}
+                        className="grid size-7 place-items-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+                        title="View dependency job"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </button>
+                    </div>
+                  ) : (
                     <span className="text-neutral-400">None</span>
                   )}
                 </Field>
