@@ -20,7 +20,7 @@ Jobs can get created, queued, processed, and tracked. Workers run independently 
 ### Install
 
 ```bash
-git clone https://github.com/Zubbee18/zubbee-scheduler.git
+git clone https://github.com/zub-bee/zubbee-scheduler.git
 cd zubbee-scheduler
 npm install
 ```
